@@ -1,0 +1,37 @@
+{
+  "version": "v1_tabular_baseline",
+  "target": "log_price_per_m2",
+  "current_year": 2025,
+  "features_num": [
+    "area",
+    "rooms",
+    "floor",
+    "floors_total",
+    "floor_ratio",
+    "is_first",
+    "is_last",
+    "building_age"
+  ],
+  "features_cat": [
+    "district",
+    "building_type"
+  ],
+  "features": [
+    "area",
+    "rooms",
+    "floor",
+    "floors_total",
+    "floor_ratio",
+    "is_first",
+    "is_last",
+    "building_age",
+    "district",
+    "building_type"
+  ],
+  "split_seed": 42,
+  "metrics_test": {
+    "r2_log": 0.5928,
+    "mae_ppm2": 114077,
+    "mae_price": 10176110
+  }
+}

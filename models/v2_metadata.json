@@ -1,0 +1,29 @@
+{
+  "version": "v2_tabular_plus_clip_vitb32_mean7",
+  "current_year": 2025,
+  "target": "log_price_per_m2",
+  "features_num": [
+    "area",
+    "rooms",
+    "floor",
+    "floors_total",
+    "floor_ratio",
+    "is_first",
+    "is_last",
+    "building_age"
+  ],
+  "features_cat": [
+    "district",
+    "building_type"
+  ],
+  "clip": {
+    "library": "open_clip",
+    "model_name": "ViT-B-32",
+    "pretrained": "laion2b_s34b_b79k",
+    "aggregation": "mean",
+    "max_images": 7,
+    "normalize_per_image": true,
+    "normalize_agg": true
+  },
+  "model_file": "catboost_tabular_plus_clip_vitb32.cbm"
+}
