@@ -1,56 +1,31 @@
 from pathlib import Path
-from typing import List, Optional
-import os
+from typing import List
 import tempfile
+import shutil
 
 from fastapi import FastAPI, UploadFile, File, Form
 
 from .v2_infer import V2Estimator
 
-PROJECT_ROOT = Path(os.environ.get("KRISHA_ROOT", "/Users/zhasik/Desktop/krisha"))
+
+PROJECT_ROOT = Path("/Users/zhasik/Desktop/krisha")  # поправь если надо
 est = V2Estimator(PROJECT_ROOT)
 
-app = FastAPI(title="Krisha Price Estimator", version="2.1")
+app = FastAPI(title="Krisha Price Estimator v2", version="2.0")
 
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "model": est.meta.get("version", "unknown")}
+    return {"status": "ok", "model": est.meta["version"]}
 
 
-def build_payload(
-    area: float,
-    rooms: int,
-    floor: int,
-    floors_total: int,
-    year_built: int,
-    district: str,
-    building_type: str,
-):
-    return {
-        "area": float(area),
-        "rooms": int(rooms),
-        "floor": int(floor),
-        "floors_total": int(floors_total),
-        "year_built": int(year_built),
-        "district": str(district),
-        "building_type": str(building_type),
-    }
-
-
-@app.post("/predict_tabular")
-async def predict_tabular(
-    area: float = Form(...),
-    rooms: int = Form(...),
-    floor: int = Form(...),
-    floors_total: int = Form(...),
-    year_built: int = Form(...),
-    district: str = Form(...),
-    building_type: str = Form(...),
-):
-    payload = build_payload(area, rooms, floor, floors_total, year_built, district, building_type)
-    # tabular-only: пустой список изображений
-    return est.predict(payload, image_files=[])
+def _save_uploads_to_tmp(images: List[UploadFile], max_images: int) -> List[Path]:
+    """
+    Saves uploaded images to a temporary directory and returns list of Paths.
+    IMPORTANT: caller must keep the TemporaryDirectory alive while using the paths.
+    We'll return both tempdir handle + paths in the endpoints below.
+    """
+    raise NotImplementedError  # see endpoints below
 
 
 @app.post("/predict")
@@ -62,21 +37,68 @@ async def predict(
     year_built: int = Form(...),
     district: str = Form(...),
     building_type: str = Form(...),
-    images: Optional[List[UploadFile]] = File(None),  # <-- фото НЕ обязательны
+    images: List[UploadFile] = File(default=[]),
 ):
-    payload = build_payload(area, rooms, floor, floors_total, year_built, district, building_type)
+    x = dict(
+        area=area,
+        rooms=rooms,
+        floor=floor,
+        floors_total=floors_total,
+        year_built=year_built,
+        district=district,
+        building_type=building_type,
+    )
 
-    tmp_paths: List[Path] = []
     with tempfile.TemporaryDirectory() as td:
-        td_path = Path(td)
+        td = Path(td)
+        paths: List[Path] = []
 
-        if images:
-            # берём максимум 7
-            for i, f in enumerate(images[:7]):
-                # разрешаем webp/jpg/png — Pillow откроет
-                filename = f.filename or f"image_{i:02d}"
-                p = td_path / f"{i:02d}_{filename}"
-                p.write_bytes(await f.read())
-                tmp_paths.append(p)
+        for i, f in enumerate(images[: est.max_images]):
+            # Make safe-ish filename
+            suffix = Path(f.filename or "").suffix or ".jpg"
+            p = td / f"{i:02d}{suffix}"
 
-        return est.predict(payload, image_files=tmp_paths)
+            with p.open("wb") as out:
+                shutil.copyfileobj(f.file, out)
+
+            paths.append(p)
+
+        return est.predict(x, paths)
+
+
+@app.post("/explain")
+async def explain(
+    area: float = Form(...),
+    rooms: int = Form(...),
+    floor: int = Form(...),
+    floors_total: int = Form(...),
+    year_built: int = Form(...),
+    district: str = Form(...),
+    building_type: str = Form(...),
+    images: List[UploadFile] = File(default=[]),
+):
+    x = dict(
+        area=area,
+        rooms=rooms,
+        floor=floor,
+        floors_total=floors_total,
+        year_built=year_built,
+        district=district,
+        building_type=building_type,
+    )
+
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        paths: List[Path] = []
+
+        for i, f in enumerate(images[: est.max_images]):
+            suffix = Path(f.filename or "").suffix or ".jpg"
+            p = td / f"{i:02d}{suffix}"
+
+            with p.open("wb") as out:
+                shutil.copyfileobj(f.file, out)
+
+            paths.append(p)
+
+        # главное: тут вызываем explain()
+        return est.explain(x, paths)
