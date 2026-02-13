@@ -2,6 +2,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
+import math
 
 import numpy as np
 import pandas as pd
@@ -34,10 +35,10 @@ class V2Estimator:
       - explain(): local SHAP values (CatBoost) + renovation review via CLIP zero-shot prompts
     """
 
-    def __init__(self, project_root: Path):
+    def __init__(self, project_root: Path, meta_file: str = "v2_metadata.json"):
         self.project_root = Path(project_root)
 
-        meta_path = self.project_root / "models" / "v2_metadata.json"
+        meta_path = self.project_root / "models" / meta_file
         self.meta = json.loads(meta_path.read_text(encoding="utf-8"))
 
         # Load CatBoost model
@@ -66,14 +67,18 @@ class V2Estimator:
         self.features = self.features_num + self.features_cat
         self.current_year = int(self.meta["current_year"])
 
-        # Determine embedding dim
+        # Determine native CLIP embedding dim
         with torch.no_grad():
             dummy = torch.zeros(1, 3, 224, 224, device=self.device)
             z = self.clip_model.encode_image(dummy)
-            self.emb_dim = int(z.shape[-1])
+            self.clip_native_dim = int(z.shape[-1])
 
-        # Create embedding column names
-        self.emb_cols = [f"clip_{i:03d}" for i in range(self.emb_dim)]
+        # Create embedding column names expected by the CatBoost model.
+        model_feature_names = list(getattr(self.model, "feature_names_", []) or [])
+        self.emb_cols = [c for c in model_feature_names if c.startswith("clip_")]
+        if not self.emb_cols:
+            self.emb_cols = [f"clip_{i:03d}" for i in range(self.clip_native_dim)]
+        self.model_emb_dim = len(self.emb_cols)
 
         # Precompute CatBoost cat feature indices for pools
         # (CatBoost wants indices in the provided data order)
@@ -112,6 +117,9 @@ class V2Estimator:
             ("old_windows", "старые окна, деревянные рамы, слабая герметичность"),
         ]
 
+        # Similar listings cache (loaded once)
+        self._comparables_df = self._load_comparables_df()
+
     # -------------------------
     # Core feature building
     # -------------------------
@@ -125,7 +133,7 @@ class V2Estimator:
                 continue
 
         if not tensors:
-            return np.zeros((self.emb_dim,), dtype=np.float32)
+            return np.zeros((self.clip_native_dim,), dtype=np.float32)
 
         imgs = torch.stack(tensors, dim=0).to(self.device)
 
@@ -140,15 +148,52 @@ class V2Estimator:
             emb = emb / (np.linalg.norm(emb) + 1e-12)
         return emb.astype(np.float32)
 
+    def _to_model_embedding(self, emb: np.ndarray) -> np.ndarray:
+        v = np.asarray(emb, dtype=np.float32).reshape(-1)
+        if v.shape[0] >= self.model_emb_dim:
+            return v[: self.model_emb_dim]
+        out = np.zeros((self.model_emb_dim,), dtype=np.float32)
+        out[: v.shape[0]] = v
+        return out
+
     def _make_tabular_row(self, x: Dict[str, Any]) -> Dict[str, Any]:
+        def _cat(v: Any) -> str:
+            if v is None:
+                return "unknown"
+            s = str(v).strip()
+            if not s or s.lower() in {"nan", "none", "null"}:
+                return "unknown"
+            return s
+
+        def _num(v: Any) -> Optional[float]:
+            if v is None:
+                return None
+            try:
+                z = float(v)
+            except Exception:
+                return None
+            if not np.isfinite(z):
+                return None
+            return z
+
         area = float(x["area"])
         rooms = int(x["rooms"])
         floor = int(x["floor"])
         floors_total = int(x["floors_total"])
         year_built = int(x["year_built"])
 
-        district = str(x["district"])
-        building_type = str(x["building_type"])
+        district = _cat(x.get("district"))
+        building_type = _cat(x.get("building_type"))
+        residential_complex = _cat(x.get("residential_complex"))
+
+        lat = _num(x.get("latitude"))
+        lon = _num(x.get("longitude"))
+        has_geo = int(lat is not None and lon is not None)
+        if lat is None:
+            lat = 43.238949
+        if lon is None:
+            lon = 76.889709
+        has_residential_complex = int(residential_complex != "unknown")
 
         floor_ratio = floor / floors_total if floors_total else 0.0
         floor_ratio = max(0.0, min(1.0, floor_ratio))
@@ -166,8 +211,13 @@ class V2Estimator:
             "is_first": is_first,
             "is_last": is_last,
             "building_age": building_age,
+            "latitude": float(lat),
+            "longitude": float(lon),
+            "has_geo": has_geo,
+            "has_residential_complex": has_residential_complex,
             "district": district,
             "building_type": building_type,
+            "residential_complex": residential_complex,
         }
 
     def _build_row_and_df(
@@ -177,7 +227,21 @@ class V2Estimator:
     ) -> Tuple[Dict[str, Any], pd.DataFrame, np.ndarray]:
         tab = self._make_tabular_row(x)
         emb = self._encode_images(image_files)
-        row = {**tab, **{c: float(v) for c, v in zip(self.emb_cols, emb)}}
+        emb_for_model = self._to_model_embedding(emb)
+        row = {**tab, **{c: float(v) for c, v in zip(self.emb_cols, emb_for_model)}}
+
+        # Ensure expected schema and safe cat values for CatBoost
+        for c in self.features_num:
+            if c not in row:
+                row[c] = 0.0
+        for c in self.features_cat:
+            v = row.get(c)
+            if v is None:
+                row[c] = "unknown"
+            else:
+                s = str(v).strip()
+                row[c] = s if s and s.lower() not in {"nan", "none", "null"} else "unknown"
+
         X = pd.DataFrame([row], columns=self.features + self.emb_cols)
         return row, X, emb
 
@@ -188,7 +252,7 @@ class V2Estimator:
         self,
         x: Dict[str, Any],
         image_files: List[Path],
-    ) -> Dict[str, float]:
+    ) -> Dict[str, Any]:
         _, X, _ = self._build_row_and_df(x, image_files)
 
         pred_log = float(self.model.predict(X))
@@ -199,6 +263,7 @@ class V2Estimator:
             "pred_log_price_per_m2": pred_log,
             "price_per_m2": ppm2,
             "price": price,
+            "comparables": self._find_similar_ads(x, top_k=3),
         }
 
 
@@ -383,6 +448,7 @@ class V2Estimator:
             },
             "renovation": renovation,
             "recommendations": recommendations,
+            "comparables": self._find_similar_ads(x, top_k=3),
         }
 
 
@@ -395,6 +461,249 @@ class V2Estimator:
             "unit": fi.unit,
             "reason": fi.reason,
         }
+
+    # -------------------------
+    # Similar listings
+    # -------------------------
+    def _load_comparables_df(self) -> pd.DataFrame:
+        idx_path = self.project_root / "data" / "index" / "index.parquet"
+        if idx_path.exists():
+            try:
+                df = pd.read_parquet(idx_path)
+                return self._normalize_comparables_df(df)
+            except Exception:
+                pass
+
+        rows: List[Dict[str, Any]] = []
+        for raw_dir_name in ("raw_ads_test", "raw_ads"):
+            raw_dir = self.project_root / "data" / raw_dir_name
+            if not raw_dir.exists():
+                continue
+            for fp in raw_dir.glob("*.json"):
+                try:
+                    rec = json.loads(fp.read_text(encoding="utf-8"))
+                except Exception:
+                    continue
+                rec["image_paths"] = []
+                rec["image_preview"] = (rec.get("image_urls") or [None])[0]
+                rows.append(rec)
+
+        if not rows:
+            return pd.DataFrame()
+
+        return self._normalize_comparables_df(pd.DataFrame(rows))
+
+    def _ensure_list(self, v: Any) -> List[Any]:
+        if v is None:
+            return []
+        if isinstance(v, list):
+            return v
+        if isinstance(v, tuple):
+            return list(v)
+        if isinstance(v, str):
+            s = v.strip()
+            if not s:
+                return []
+            try:
+                obj = json.loads(s)
+                if isinstance(obj, list):
+                    return obj
+            except Exception:
+                pass
+            return [s]
+        return [v]
+
+    def _normalize_comparables_df(self, df: pd.DataFrame) -> pd.DataFrame:
+        if df is None or df.empty:
+            return pd.DataFrame()
+
+        work = df.copy()
+
+        for col in ("price", "area", "price_per_m2", "rooms", "year_built", "floor", "floors_total", "latitude", "longitude"):
+            if col in work.columns:
+                work[col] = pd.to_numeric(work[col], errors="coerce")
+
+        for col in ("district", "building_type", "residential_complex", "url", "ad_id"):
+            if col not in work.columns:
+                work[col] = None
+            else:
+                work[col] = work[col].astype("string")
+
+        if "image_paths" not in work.columns:
+            work["image_paths"] = [[] for _ in range(len(work))]
+        if "image_urls" not in work.columns:
+            work["image_urls"] = [[] for _ in range(len(work))]
+
+        work["image_paths"] = work["image_paths"].apply(self._ensure_list)
+        work["image_urls"] = work["image_urls"].apply(self._ensure_list)
+
+        if "image_preview" not in work.columns:
+            previews: List[Optional[str]] = []
+            for _, r in work.iterrows():
+                paths = self._ensure_list(r.get("image_paths"))
+                urls = self._ensure_list(r.get("image_urls"))
+                pv = paths[0] if paths else (urls[0] if urls else None)
+                previews.append(pv)
+            work["image_preview"] = previews
+
+        return work
+
+    def _to_float(self, v: Any) -> Optional[float]:
+        if v is None:
+            return None
+        if isinstance(v, (list, tuple, np.ndarray)):
+            if len(v) == 0:
+                return None
+            return self._to_float(v[0])
+        try:
+            is_na = pd.isna(v)
+            if isinstance(is_na, (list, tuple, np.ndarray)):
+                return None
+            if bool(is_na):
+                return None
+        except Exception:
+            pass
+        try:
+            return float(v)
+        except Exception:
+            return None
+
+    def _to_str(self, v: Any, default: str = "") -> str:
+        if v is None:
+            return default
+        if isinstance(v, (list, tuple, np.ndarray)):
+            if len(v) == 0:
+                return default
+            return self._to_str(v[0], default=default)
+        try:
+            is_na = pd.isna(v)
+            if isinstance(is_na, (list, tuple, np.ndarray)):
+                return default
+            if bool(is_na):
+                return default
+        except Exception:
+            pass
+        s = str(v).strip()
+        return s if s else default
+
+    def _to_nullable_str(self, v: Any) -> Optional[str]:
+        s = self._to_str(v, default="")
+        return s if s else None
+
+    def _haversine_km(self, lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+        r = 6371.0
+        p1 = math.radians(lat1)
+        p2 = math.radians(lat2)
+        dp = math.radians(lat2 - lat1)
+        dl = math.radians(lon2 - lon1)
+        a = math.sin(dp / 2.0) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2.0) ** 2
+        return 2.0 * r * math.asin(math.sqrt(a))
+
+    def _find_similar_ads(self, x: Dict[str, Any], top_k: int = 3) -> List[Dict[str, Any]]:
+        try:
+            if self._comparables_df is None or self._comparables_df.empty:
+                return []
+
+            q_area = self._to_float(x.get("area"))
+            q_rooms = self._to_float(x.get("rooms"))
+            q_floor = self._to_float(x.get("floor"))
+            q_total = self._to_float(x.get("floors_total"))
+            q_year = self._to_float(x.get("year_built"))
+            q_lat = self._to_float(x.get("latitude"))
+            q_lon = self._to_float(x.get("longitude"))
+
+            q_district = self._to_str(x.get("district")).lower()
+            q_building = self._to_str(x.get("building_type")).lower()
+            q_complex = self._to_str(x.get("residential_complex")).lower()
+
+            scored: List[Dict[str, Any]] = []
+
+            for _, row in self._comparables_df.iterrows():
+                price = self._to_float(row.get("price"))
+                area = self._to_float(row.get("area"))
+                if price is None or area is None or area <= 0:
+                    continue
+
+                score = 0.0
+
+                district = self._to_str(row.get("district")).lower()
+                building = self._to_str(row.get("building_type")).lower()
+                complex_name = self._to_str(row.get("residential_complex")).lower()
+
+                if q_district and district == q_district:
+                    score += 3.0
+                if q_building and building == q_building:
+                    score += 2.0
+                if q_complex and complex_name and complex_name == q_complex:
+                    score += 2.5
+
+                row_rooms = self._to_float(row.get("rooms"))
+                if q_rooms is not None and row_rooms is not None:
+                    score += max(0.0, 1.5 - abs(q_rooms - row_rooms) * 0.7)
+
+                if q_area is not None:
+                    score += max(0.0, 3.0 - abs(q_area - area) / 10.0)
+
+                row_year = self._to_float(row.get("year_built"))
+                if q_year is not None and row_year is not None:
+                    score += max(0.0, 1.5 - abs(q_year - row_year) / 12.0)
+
+                if q_floor is not None and q_total is not None and q_total > 0:
+                    q_ratio = q_floor / q_total
+                    r_floor = self._to_float(row.get("floor"))
+                    r_total = self._to_float(row.get("floors_total"))
+                    if r_floor is not None and r_total is not None and r_total > 0:
+                        r_ratio = r_floor / r_total
+                        score += max(0.0, 1.0 - abs(q_ratio - r_ratio) * 3.0)
+
+                distance_km = None
+                r_lat = self._to_float(row.get("latitude"))
+                r_lon = self._to_float(row.get("longitude"))
+                if q_lat is not None and q_lon is not None and r_lat is not None and r_lon is not None:
+                    distance_km = self._haversine_km(q_lat, q_lon, r_lat, r_lon)
+                    score += max(0.0, 2.5 - distance_km * 0.6)
+
+                if score <= 0:
+                    continue
+
+                scored.append(
+                    {
+                        "score": float(score),
+                        "distance_km": float(distance_km) if distance_km is not None else None,
+                        "ad_id": self._to_str(row.get("ad_id")),
+                        "url": self._to_nullable_str(row.get("url")),
+                        "price": price,
+                        "price_per_m2": self._to_float(row.get("price_per_m2")),
+                        "area": area,
+                        "rooms": self._to_float(row.get("rooms")),
+                        "district": self._to_nullable_str(row.get("district")),
+                        "building_type": self._to_nullable_str(row.get("building_type")),
+                        "residential_complex": self._to_nullable_str(row.get("residential_complex")),
+                        "year_built": self._to_float(row.get("year_built")),
+                        "floor": self._to_float(row.get("floor")),
+                        "floors_total": self._to_float(row.get("floors_total")),
+                        "latitude": r_lat,
+                        "longitude": r_lon,
+                        "image": self._to_nullable_str(row.get("image_preview")),
+                    }
+                )
+
+            scored.sort(key=lambda z: z["score"], reverse=True)
+
+            out: List[Dict[str, Any]] = []
+            seen = set()
+            for item in scored:
+                ad_id = item.get("ad_id")
+                if ad_id in seen:
+                    continue
+                seen.add(ad_id)
+                out.append(item)
+                if len(out) >= top_k:
+                    break
+            return out
+        except Exception:
+            # Comparables are auxiliary and must never break core predict/explain APIs.
+            return []
 
     # -------------------------
     # CLIP zero-shot renovation module

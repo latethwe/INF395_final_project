@@ -8,7 +8,7 @@ from fastapi import FastAPI, UploadFile, File, Form
 from .v2_infer import V2Estimator
 
 
-PROJECT_ROOT = Path("/Users/zhasik/Desktop/krisha")  # поправь если надо
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 est = V2Estimator(PROJECT_ROOT)
 
 app = FastAPI(title="Krisha Price Estimator v2", version="2.0")
@@ -37,6 +37,9 @@ async def predict(
     year_built: int = Form(...),
     district: str = Form(...),
     building_type: str = Form(...),
+    residential_complex: str | None = Form(default=None),
+    latitude: float | None = Form(default=None),
+    longitude: float | None = Form(default=None),
     images: List[UploadFile] = File(default=[]),
 ):
     x = dict(
@@ -47,6 +50,9 @@ async def predict(
         year_built=year_built,
         district=district,
         building_type=building_type,
+        residential_complex=residential_complex,
+        latitude=latitude,
+        longitude=longitude,
     )
 
     with tempfile.TemporaryDirectory() as td:
@@ -75,6 +81,9 @@ async def explain(
     year_built: int = Form(...),
     district: str = Form(...),
     building_type: str = Form(...),
+    residential_complex: str | None = Form(default=None),
+    latitude: float | None = Form(default=None),
+    longitude: float | None = Form(default=None),
     images: List[UploadFile] = File(default=[]),
 ):
     x = dict(
@@ -85,6 +94,9 @@ async def explain(
         year_built=year_built,
         district=district,
         building_type=building_type,
+        residential_complex=residential_complex,
+        latitude=latitude,
+        longitude=longitude,
     )
 
     with tempfile.TemporaryDirectory() as td:
@@ -100,5 +112,4 @@ async def explain(
 
             paths.append(p)
 
-        # главное: тут вызываем explain()
         return est.explain(x, paths)
