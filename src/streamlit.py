@@ -25,7 +25,7 @@ def load_rc_options() -> list[str]:
     names = set()
 
     # Single source of truth: curated list from dropdown export
-    csv_path = PROJECT_ROOT / "data" / "rc_names" / "almaty_rc_names.csv"
+    csv_path = PROJECT_ROOT / "rc_names" / "almaty_rc_names.csv"
     if csv_path.exists():
         try:
             with csv_path.open(encoding="utf-8") as f:
@@ -88,7 +88,7 @@ with st.sidebar:
     rc_options = load_rc_options()
     st.caption(f"ЖК в базе: {max(0, len(rc_options) - 1)}")
     if len(rc_options) <= 1:
-        st.warning(f"Список ЖК пуст. Проверь файл: {PROJECT_ROOT / 'data' / 'rc_names' / 'almaty_rc_names.csv'}")
+        st.warning(f"Список ЖК пуст. Проверь файл: {PROJECT_ROOT / 'rc_names' / 'almaty_rc_names.csv'}")
     rc_query = st.text_input(
         "ЖК",
         value="",
