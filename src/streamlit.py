@@ -265,6 +265,13 @@ def call_explain(files=None, no_photos=False):
     return r.json()
 
 
+def call_predict_by_url(ad_url: str):
+    data = {"url": (ad_url or "").strip()}
+    r = requests.post(f"{API_BASE}/predict_by_url", data=data, timeout=180)
+    r.raise_for_status()
+    return r.json()
+
+
 def safe_get(d, *path, default=None):
     cur = d
     for p in path:
@@ -345,8 +352,18 @@ with c2:
 with c3:
     st.caption("Для объяснения лучше 3–7 фото (кухня, санузел, общая, спальня).")
 
+st.divider()
+st.subheader("Оценка по ссылке объявления")
+ad_url_input = st.text_input(
+    "Ссылка Krisha (или ad_id)",
+    value="",
+    placeholder="https://krisha.kz/a/show/123456789",
+)
+run_predict_by_url = st.button("Оценить по ссылке", use_container_width=True)
+
 pred_out = None
 exp_out = None
+url_out = None
 
 if run_predict:
     try:
@@ -375,6 +392,20 @@ if run_explain:
         st.error(f"Ошибка API /explain: {e}\n\n{body}")
     except Exception as e:
         st.error(f"Ошибка запроса /explain: {e}")
+
+if run_predict_by_url:
+    if not ad_url_input.strip():
+        st.warning("Введите ссылку на объявление или ad_id.")
+    else:
+        try:
+            url_out = call_predict_by_url(ad_url_input.strip())
+        except requests.HTTPError as e:
+            body = ""
+            if e.response is not None:
+                body = e.response.text[:800]
+            st.error(f"Ошибка API /predict_by_url: {e}\n\n{body}")
+        except Exception as e:
+            st.error(f"Ошибка запроса /predict_by_url: {e}")
 
 out = exp_out or pred_out
 if out:
@@ -500,6 +531,42 @@ if exp_out:
 
 else:
     st.info("Нажмите **Оценить + объяснить**, чтобы увидеть разбор факторов и оценку по фото.")
+
+if url_out:
+    st.divider()
+    st.subheader("Результат по ссылке")
+    listing = url_out.get("listing", {})
+    prediction = url_out.get("prediction", {})
+    diff = url_out.get("difference", {})
+    price_diff = (diff or {}).get("price", {}) or {}
+    ppm2_diff = (diff or {}).get("price_per_m2", {}) or {}
+
+    c_url1, c_url2, c_url3 = st.columns(3)
+    c_url1.metric("Цена в объявлении", fmt_money((listing or {}).get("price")))
+    c_url2.metric("Оценка модели", fmt_money((prediction or {}).get("price")))
+    c_url3.metric(
+        "Разница",
+        fmt_money(price_diff.get("diff")),
+        delta=(f"{float(price_diff.get('diff_pct')):+.1f}%" if price_diff.get("diff_pct") is not None else None),
+    )
+
+    c_url4, c_url5, c_url6 = st.columns(3)
+    c_url4.metric("₸/м² в объявлении", fmt_ppm2((listing or {}).get("price_per_m2")))
+    c_url5.metric("₸/м² модель", fmt_ppm2((prediction or {}).get("price_per_m2")))
+    c_url6.metric(
+        "Разница по ₸/м²",
+        fmt_ppm2(ppm2_diff.get("diff")),
+        delta=(f"{float(ppm2_diff.get('diff_pct')):+.1f}%" if ppm2_diff.get("diff_pct") is not None else None),
+    )
+
+    st.caption(
+        f"Фото: найдено {int((listing or {}).get('image_urls_count') or 0)}, "
+        f"скачано для модели {int((listing or {}).get('images_downloaded_count') or 0)}."
+    )
+    if listing.get("url"):
+        st.markdown(f"[Открыть объявление]({listing['url']})")
+
+    render_comparables((prediction or {}).get("comparables", []))
 
 if uploaded_files:
     st.subheader("Загруженные фото")

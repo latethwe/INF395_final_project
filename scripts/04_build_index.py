@@ -4,8 +4,13 @@ from pathlib import Path
 
 import pandas as pd
 
-def main(raw_dir="data/raw_ads", img_root="data/images", out_path="data/index/index.parquet",
-         min_images=3):
+def main(
+    raw_dir="data/raw_ads",
+    img_root="data/images",
+    out_path="data/index/index.parquet",
+    min_images=3,
+    require_local_images=False,
+):
     rows = []
     for fp in Path(raw_dir).glob("*.json"):
         rec = json.loads(fp.read_text(encoding="utf-8"))
@@ -14,16 +19,18 @@ def main(raw_dir="data/raw_ads", img_root="data/images", out_path="data/index/in
         if not ppm or ppm <= 0:
             continue
 
-        img_dir = Path(img_root) / rec["ad_id"]
-        if not img_dir.exists():
-            continue
-
         paths = []
-        for ext in ("*.jpg", "*.jpeg", "*.webp", "*.png"):
-            paths.extend([str(p) for p in img_dir.glob(ext)])
+        img_dir = Path(img_root) / rec["ad_id"]
+        if img_dir.exists():
+            for ext in ("*.jpg", "*.jpeg", "*.webp", "*.png"):
+                paths.extend([str(p) for p in img_dir.glob(ext)])
         paths = sorted(paths)
 
-        if len(paths) < min_images:
+        image_urls = rec.get("image_urls") or []
+        image_count = len(paths) if paths else len(image_urls)
+        if image_count < min_images:
+            continue
+        if require_local_images and len(paths) < min_images:
             continue
 
         rows.append({
@@ -38,21 +45,26 @@ def main(raw_dir="data/raw_ads", img_root="data/images", out_path="data/index/in
             "rooms": rec.get("rooms"),
             "district": rec.get("district"),
             "building_type": rec.get("building_type"),
+            "residential_complex": rec.get("residential_complex"),
             "year_built": rec.get("year_built"),
             "floor": rec.get("floor"),
             "floors_total": rec.get("floors_total"),
+            "latitude": rec.get("latitude"),
+            "longitude": rec.get("longitude"),
 
             "image_paths": paths,
+            "image_urls": image_urls,
         })
 
     df = pd.DataFrame(rows)
 
     # нормализация типов
-    for c in ["rooms", "year_built", "floor", "floors_total"]:
+    for c in ["rooms", "year_built", "floor", "floors_total", "latitude", "longitude"]:
         if c in df.columns:
             df[c] = pd.to_numeric(df[c], errors="coerce")
 
-    Path("data/index").mkdir(parents=True, exist_ok=True)
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
     df.to_parquet(out_path, index=False)
     print("Saved:", out_path, "rows:", len(df))
 

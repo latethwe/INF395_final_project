@@ -1,6 +1,6 @@
 {
   "version": "v2_tabular_plus_clip_vitb32_mean7",
-  "current_year": 2025,
+  "current_year": 2026,
   "target": "log_price_per_m2",
   "features_num": [
     "area",
@@ -10,11 +10,16 @@
     "floor_ratio",
     "is_first",
     "is_last",
-    "building_age"
+    "building_age",
+    "latitude",
+    "longitude",
+    "has_geo",
+    "has_residential_complex"
   ],
   "features_cat": [
     "district",
-    "building_type"
+    "building_type",
+    "residential_complex"
   ],
   "clip": {
     "library": "open_clip",

@@ -26,7 +26,7 @@ def guess_ext(url: str, content_type: str | None) -> str:
         if "jpeg" in ct or "jpg" in ct: return ".jpg"
     return ".jpg"
 
-def main(raw_dir="data/raw_ads", img_root="data/images", max_images=7,
+def main(raw_dir="data/raw_ads", img_root="data/images", max_images=8,
          sleep_min=0.2, sleep_max=0.6):
     Path(img_root).mkdir(parents=True, exist_ok=True)
     session = requests.Session()

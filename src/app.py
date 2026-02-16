@@ -3,9 +3,15 @@ from typing import List
 import tempfile
 import shutil
 
-from fastapi import FastAPI, UploadFile, File, Form
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 
 from .v2_infer import V2Estimator
+from .krisha_ad import (
+    fetch_listing,
+    download_images,
+    build_model_payload_from_listing,
+    make_price_diff,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -113,3 +119,57 @@ async def explain(
             paths.append(p)
 
         return est.explain(x, paths)
+
+
+@app.post("/predict_by_url")
+async def predict_by_url(url: str = Form(...)):
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        session_images_dir = td_path / "images"
+
+        try:
+            rec = fetch_listing(url)
+            x = build_model_payload_from_listing(rec)
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e))
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Ошибка парсинга объявления: {e}")
+
+        image_paths = download_images(
+            image_urls=rec.get("image_urls", []),
+            out_dir=session_images_dir,
+            max_images=est.max_images,
+        )
+
+        prediction = est.predict(x, image_paths)
+
+        actual_price = rec.get("price")
+        actual_ppm2 = rec.get("price_per_m2")
+        pred_price = prediction.get("price")
+        pred_ppm2 = prediction.get("price_per_m2")
+
+        return {
+            "listing": {
+                "ad_id": rec.get("ad_id"),
+                "url": rec.get("url"),
+                "price": actual_price,
+                "price_per_m2": actual_ppm2,
+                "area": rec.get("area"),
+                "rooms": rec.get("rooms"),
+                "district": rec.get("district"),
+                "building_type": rec.get("building_type"),
+                "residential_complex": rec.get("residential_complex"),
+                "year_built": rec.get("year_built"),
+                "floor": rec.get("floor"),
+                "floors_total": rec.get("floors_total"),
+                "latitude": rec.get("latitude"),
+                "longitude": rec.get("longitude"),
+                "image_urls_count": len(rec.get("image_urls", [])),
+                "images_downloaded_count": len(image_paths),
+            },
+            "prediction": prediction,
+            "difference": {
+                "price": make_price_diff(pred_price, actual_price),
+                "price_per_m2": make_price_diff(pred_ppm2, actual_ppm2),
+            },
+        }
