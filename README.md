@@ -167,7 +167,3 @@ Recommended approach:
 - `src/v2_infer.py` — inference and explainability
 - `src/krisha_ad.py` — parse listing by URL
 - `src/app.py` — API
-
----
-
-If you want a one-command workflow, add a wrapper script like `run_full_pipeline.sh` that runs steps 5.1 → 5.7 sequentially.
