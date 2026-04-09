@@ -1,4 +1,4 @@
-# Krisha Multimodal Price Estimator
+# Photo-Enhanced Multimodal Apartment Valuation System
 
 A multimodal real estate valuation system: tabular features + listing photos (CLIP) + CatBoost.
 
@@ -21,7 +21,7 @@ The project supports:
 ## 2. Installation
 
 ```bash
-cd /path/to/krisha
+cd /path/to/(project)
 python -m venv .venv
 source .venv/bin/activate
 pip install -U pip
