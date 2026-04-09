@@ -7,6 +7,8 @@ import streamlit as st
 
 API_BASE = "http://127.0.0.1:8000"
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+MAX_UPLOAD_IMAGES = 10
+MIN_RECOMMENDED_IMAGES = 4
 
 try:
     import folium
@@ -178,7 +180,7 @@ with st.sidebar:
     st.divider()
     st.header("Фото")
     uploaded_files = st.file_uploader(
-        "Загрузите 1–7 фото (jpg/jpeg/png/webp)",
+        f"Загрузите 1–{MAX_UPLOAD_IMAGES} фото (jpg/jpeg/png/webp)",
         type=["jpg", "jpeg", "png", "webp"],
         accept_multiple_files=True,
     )
@@ -189,8 +191,8 @@ with st.sidebar:
         key="no_photos_mode",
         help="Используется как базовая оценка без учёта визуального состояния",
     )
-    if uploaded_files and len(uploaded_files) > 7:
-        st.warning("Будет использовано только первые 7 фото.")
+    if uploaded_files and len(uploaded_files) > MAX_UPLOAD_IMAGES:
+        st.warning(f"Будут использованы только первые {MAX_UPLOAD_IMAGES} фото.")
 
 payload = {
     "area": float(area),
@@ -244,7 +246,7 @@ def call_predict(files=None, no_photos=False):
     multipart = []
 
     if not no_photos:
-        for f in (files or [])[:7]:
+        for f in (files or [])[:MAX_UPLOAD_IMAGES]:
             multipart.append(("images", (f.name, f.getvalue(), f.type or "application/octet-stream")))
 
     r = requests.post(f"{API_BASE}/predict", data=data, files=multipart, timeout=180)
@@ -257,7 +259,7 @@ def call_explain(files=None, no_photos=False):
     multipart = []
 
     if not no_photos:
-        for f in (files or [])[:7]:
+        for f in (files or [])[:MAX_UPLOAD_IMAGES]:
             multipart.append(("images", (f.name, f.getvalue(), f.type or "application/octet-stream")))
 
     r = requests.post(f"{API_BASE}/explain", data=data, files=multipart, timeout=180)
@@ -305,39 +307,6 @@ def impacts_to_rows(items):
     return rows
 
 
-def render_comparables(items):
-    st.subheader("Похожие объявления")
-    if not items:
-        st.info("Похожие объявления пока не найдены в локальном датасете.")
-        return
-
-    cols = st.columns(min(3, len(items)))
-    for i, it in enumerate(items[:3]):
-        col = cols[i % len(cols)]
-        with col:
-            img = it.get("image")
-            if isinstance(img, str) and img:
-                p = Path(img)
-                p_abs = p if p.is_absolute() else (PROJECT_ROOT / p)
-                if p_abs.exists():
-                    col.image(str(p_abs), caption=f"ad_id: {it.get('ad_id')}", width="stretch")
-                elif img.startswith("http://") or img.startswith("https://"):
-                    col.image(img, caption=f"ad_id: {it.get('ad_id')}", width="stretch")
-
-            col.markdown(f"**Цена:** {fmt_money(it.get('price'))}")
-            col.markdown(f"**₸/м²:** {fmt_ppm2(it.get('price_per_m2'))}")
-            col.markdown(f"**Площадь:** {_as_text(it.get('area'))} м²")
-            col.markdown(f"**Комнат:** {_as_text(it.get('rooms'))}")
-            col.markdown(f"**Район:** {_as_text(it.get('district'))}")
-            if it.get("residential_complex"):
-                col.markdown(f"**ЖК:** {_as_text(it.get('residential_complex'))}")
-            if it.get("distance_km") is not None:
-                col.markdown(f"**Дистанция:** {float(it['distance_km']):.2f} км")
-
-            if it.get("url"):
-                col.markdown(f"[Открыть объявление]({it['url']})")
-
-
 # -----------------------
 # UI
 # -----------------------
@@ -350,7 +319,7 @@ with c1:
 with c2:
     run_explain = st.button("Оценить + объяснить", use_container_width=True)
 with c3:
-    st.caption("Для объяснения лучше 3–7 фото (кухня, санузел, общая, спальня).")
+    st.caption(f"Для объяснения лучше {MIN_RECOMMENDED_IMAGES}–{MAX_UPLOAD_IMAGES} фото (кухня, санузел, общая, спальня).")
 
 st.divider()
 st.subheader("Оценка по ссылке объявления")
@@ -417,10 +386,6 @@ if out:
     colA.metric("Цена", fmt_money(price))
     colB.metric("Цена за м²", fmt_ppm2(ppm2))
     colC.metric("Площадь", f"{area_val:.1f} м²")
-
-    st.divider()
-    comps = out.get("comparables", [])
-    render_comparables(comps)
 
 st.divider()
 
@@ -566,11 +531,9 @@ if url_out:
     if listing.get("url"):
         st.markdown(f"[Открыть объявление]({listing['url']})")
 
-    render_comparables((prediction or {}).get("comparables", []))
-
 if uploaded_files:
     st.subheader("Загруженные фото")
-    imgs = uploaded_files[:7]
+    imgs = uploaded_files[:MAX_UPLOAD_IMAGES]
     cols = st.columns(min(4, len(imgs)))
     for i, f in enumerate(imgs):
         cols[i % len(cols)].image(f.getvalue(), caption=f.name, width="stretch")

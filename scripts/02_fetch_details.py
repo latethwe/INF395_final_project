@@ -1,8 +1,10 @@
 import json
+import random
 import re
 import time
-import random
+from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlparse
 
 import requests
 from bs4 import BeautifulSoup
@@ -15,12 +17,51 @@ HEADERS = {
     "Accept-Language": "ru-RU,ru;q=0.9,en;q=0.8",
 }
 
-TARGET_OK = 2000
-MIN_IMAGES = 3
+TARGET_OK = 25_000
+MIN_IMAGES = 4
+MAX_IMAGE_URLS = 10
+
+CONDITION_SYNONYMS = {
+    "fresh": [
+        "свежий ремонт",
+        "евроремонт",
+        "новый ремонт",
+        "после ремонта",
+        "дизайнерский ремонт",
+        "хорошее состояние",
+    ],
+    "average": [
+        "косметический ремонт",
+        "среднее состояние",
+        "нормальное состояние",
+        "требуется косметический",
+    ],
+    "needs": [
+        "требует ремонта",
+        "без ремонта",
+        "черновая",
+        "черновая отделка",
+        "под ремонт",
+        "незавершенный ремонт",
+    ],
+}
+
+OBJECT_HINTS = {
+    "flat": ["квартира", "квартиры", "/kvartiry/"],
+    "house": ["дом", "дома", "/doma/"],
+    "dacha": ["дача", "дачи", "/dachi/"],
+    "commercial": ["коммерчес", "/kommercheskaya/"],
+}
+
 
 # ---------- helpers ----------
 def clean_text(s: str) -> str:
     return (s or "").replace("\xa0", " ").strip()
+
+
+def normalize_whitespace(s: str) -> str:
+    return re.sub(r"\s+", " ", clean_text(s))
+
 
 def parse_price_digits(text: str) -> int | None:
     digits = re.sub(r"[^\d]", "", text)
@@ -29,6 +70,7 @@ def parse_price_digits(text: str) -> int | None:
     val = int(digits)
     return val if val >= 1_000_000 else None
 
+
 def parse_area_from_text(text: str) -> float | None:
     t = clean_text(text)
     m = re.search(r"(\d+(?:[.,]\d+)?)\s*м²", t)
@@ -36,17 +78,19 @@ def parse_area_from_text(text: str) -> float | None:
         return None
     return float(m.group(1).replace(",", "."))
 
+
 def extract_price(soup: BeautifulSoup) -> int | None:
     price_el = soup.select_one(".offer__price")
     if not price_el:
         return None
     txt = clean_text(price_el.get_text(" ", strip=True))
     low = txt.lower()
-    if re.search(r"(^|\s)от(\s|$)", low):  # skip "от"
+    if re.search(r"(^|\s)от(\s|$)", low):
         return None
     if "~" in txt or "≈" in txt:
         return None
     return parse_price_digits(txt)
+
 
 def extract_area(soup: BeautifulSoup) -> float | None:
     h1 = soup.find("h1")
@@ -67,6 +111,7 @@ def extract_area(soup: BeautifulSoup) -> float | None:
                 return a
     return None
 
+
 def extract_rooms_from_title(soup: BeautifulSoup) -> int | None:
     h1 = soup.find("h1")
     if not h1:
@@ -78,11 +123,13 @@ def extract_rooms_from_title(soup: BeautifulSoup) -> int | None:
     v = int(m.group(1))
     return v if 0 < v < 20 else None
 
+
 def find_info_value(soup: BeautifulSoup, data_name: str) -> str | None:
     item = soup.select_one(f'.offer__info-item[data-name="{data_name}"] .offer__advert-short-info')
     if not item:
         return None
     return clean_text(item.get_text(" ", strip=True))
+
 
 def find_info_value_by_label(soup: BeautifulSoup, label: str) -> str | None:
     label_norm = clean_text(label).lower()
@@ -97,6 +144,7 @@ def find_info_value_by_label(soup: BeautifulSoup, label: str) -> str | None:
             return v or None
     return None
 
+
 def extract_city_district(soup: BeautifulSoup) -> tuple[str | None, str | None]:
     span = soup.select_one(".offer__location span")
     if not span:
@@ -106,6 +154,7 @@ def extract_city_district(soup: BeautifulSoup) -> tuple[str | None, str | None]:
     city = parts[0] if parts else None
     district = parts[1] if len(parts) >= 2 else None
     return city, district
+
 
 def extract_floor_pair(soup: BeautifulSoup) -> tuple[int | None, int | None]:
     val = find_info_value(soup, "flat.floor")
@@ -120,6 +169,7 @@ def extract_floor_pair(soup: BeautifulSoup) -> tuple[int | None, int | None]:
         return None, None
     return floor, total
 
+
 def extract_year_built(soup: BeautifulSoup) -> int | None:
     val = find_info_value(soup, "house.year")
     if not val:
@@ -130,24 +180,111 @@ def extract_year_built(soup: BeautifulSoup) -> int | None:
     y = int(m.group(0))
     return y if 1800 <= y <= 2100 else None
 
+
 def extract_building_type(soup: BeautifulSoup) -> str | None:
     v = find_info_value(soup, "flat.building")
     return v or None
 
+
 def extract_residential_complex(soup: BeautifulSoup) -> str | None:
-    # 1) expected krisha data-name (if available)
     for data_name in ("map.complex", "flat.complex", "house.complex", "residential.complex"):
         v = find_info_value(soup, data_name)
         if v:
             return v
 
-    # 2) fallback by visible label
     for label in ("Жилой комплекс", "ЖК"):
         v = find_info_value_by_label(soup, label)
         if v:
             return v
 
     return None
+
+
+def extract_condition_raw(soup: BeautifulSoup) -> tuple[str | None, str | None]:
+    for label in ("Состояние квартиры", "Состояние дома"):
+        v = find_info_value_by_label(soup, label)
+        if v:
+            return v, "listing_tag"
+
+    for data_name in ("flat.renovation", "house.condition", "condition"):
+        v = find_info_value(soup, data_name)
+        if v:
+            return v, "listing_tag"
+
+    return None, None
+
+
+def normalize_condition(value: str | None) -> str:
+    txt = normalize_whitespace(value or "").lower()
+    if not txt:
+        return "unknown"
+
+    for norm, patterns in CONDITION_SYNONYMS.items():
+        for p in patterns:
+            if p in txt:
+                return norm
+
+    if "ремонт" in txt and "треб" in txt:
+        return "needs"
+    if "ремонт" in txt and ("евро" in txt or "дизайн" in txt or "свеж" in txt):
+        return "fresh"
+    if "ремонт" in txt:
+        return "average"
+    return "unknown"
+
+
+def condition_from_description(description: str | None) -> tuple[str, str | None]:
+    if not description:
+        return "unknown", None
+    norm = normalize_condition(description)
+    if norm == "unknown":
+        return norm, None
+    return norm, "description"
+
+
+def extract_description(soup: BeautifulSoup) -> str | None:
+    selectors = [
+        "div.offer__description",
+        "section.offer__description",
+        "[data-name='text'] .text",
+        "[itemprop='description']",
+        ".a-options-text",
+    ]
+    for sel in selectors:
+        node = soup.select_one(sel)
+        if node:
+            txt = normalize_whitespace(node.get_text(" ", strip=True))
+            if txt:
+                return txt
+
+    for script in soup.find_all("script", type="application/ld+json"):
+        raw = script.string or ""
+        if '"description"' not in raw:
+            continue
+        m = re.search(r'"description"\s*:\s*"(.*?)"\s*(,|})', raw, flags=re.DOTALL)
+        if not m:
+            continue
+        txt = m.group(1)
+        txt = txt.encode("utf-8", errors="ignore").decode("unicode_escape", errors="ignore")
+        txt = normalize_whitespace(txt)
+        if txt:
+            return txt
+
+    return None
+
+
+def infer_object_type(url: str, soup: BeautifulSoup) -> str:
+    haystacks = [url.lower()]
+    h1 = soup.find("h1")
+    if h1:
+        haystacks.append(clean_text(h1.get_text(" ", strip=True)).lower())
+
+    merged = " ".join(haystacks)
+    for object_type, hints in OBJECT_HINTS.items():
+        if any(h in merged for h in hints):
+            return object_type
+    return "unknown"
+
 
 def _parse_coord_value(x: str | float | int | None) -> float | None:
     if x is None:
@@ -160,13 +297,14 @@ def _parse_coord_value(x: str | float | int | None) -> float | None:
     except Exception:
         return None
 
+
 def _valid_lat_lon(lat: float | None, lon: float | None) -> bool:
     if lat is None or lon is None:
         return False
     return -90.0 <= lat <= 90.0 and -180.0 <= lon <= 180.0
 
+
 def extract_coordinates(html: str, soup: BeautifulSoup) -> tuple[float | None, float | None]:
-    # 1) direct data-attributes on page elements
     attr_pairs = [
         ("data-lat", "data-lon"),
         ("data-latitude", "data-longitude"),
@@ -180,8 +318,6 @@ def extract_coordinates(html: str, soup: BeautifulSoup) -> tuple[float | None, f
             if _valid_lat_lon(lat, lon):
                 return lat, lon
 
-    # 2) regex over inline JSON/scripts
-    # common key variants on classifieds pages
     patterns = [
         r'"lat(?:itude)?"\s*:\s*([+-]?\d+(?:[.,]\d+)?)\s*,\s*"(?:lon|lng|longitude)"\s*:\s*([+-]?\d+(?:[.,]\d+)?)',
         r'"(?:lon|lng|longitude)"\s*:\s*([+-]?\d+(?:[.,]\d+)?)\s*,\s*"lat(?:itude)?"\s*:\s*([+-]?\d+(?:[.,]\d+)?)',
@@ -205,6 +341,7 @@ def extract_coordinates(html: str, soup: BeautifulSoup) -> tuple[float | None, f
 
     return None, None
 
+
 def extract_images(soup: BeautifulSoup) -> list[str]:
     urls = []
     seen = set()
@@ -226,6 +363,7 @@ def extract_images(soup: BeautifulSoup) -> list[str]:
 
     return urls
 
+
 def is_valid(rec: dict) -> bool:
     required = [
         rec.get("price"),
@@ -244,6 +382,20 @@ def is_valid(rec: dict) -> bool:
         return False
     return True
 
+
+def has_new_schema(rec: dict) -> bool:
+    required_keys = [
+        "description",
+        "object_type",
+        "condition_raw",
+        "condition_norm",
+        "condition_source",
+        "condition_confidence",
+        "collected_at",
+    ]
+    return all(k in rec for k in required_keys)
+
+
 def count_valid(out_dir: str) -> int:
     n = 0
     for fp in Path(out_dir).glob("*.json"):
@@ -255,6 +407,7 @@ def count_valid(out_dir: str) -> int:
             continue
     return n
 
+
 # ---------- main ----------
 def main(
     ids_path="data/index/ad_ids.txt",
@@ -262,11 +415,11 @@ def main(
     sleep_min=1.0,
     sleep_max=2.0,
     limit=None,
+    refresh_existing_missing_fields=True,
 ):
     Path(out_dir).mkdir(parents=True, exist_ok=True)
     session = requests.Session()
 
-    # already have
     ok = count_valid(out_dir)
     print(f"Already valid: {ok}/{TARGET_OK}")
 
@@ -281,8 +434,14 @@ def main(
 
         out_path = Path(out_dir) / f"{ad_id}.json"
         if out_path.exists():
-            # может уже скачано; пересчитывать не будем
-            continue
+            if not refresh_existing_missing_fields:
+                continue
+            try:
+                existing = json.loads(out_path.read_text(encoding="utf-8"))
+                if is_valid(existing) and has_new_schema(existing):
+                    continue
+            except Exception:
+                pass
 
         url = SHOW_URL.format(ad_id=ad_id)
         try:
@@ -307,6 +466,19 @@ def main(
         floor, floors_total = extract_floor_pair(soup)
         images = extract_images(soup)
         latitude, longitude = extract_coordinates(r.text, soup)
+        description = extract_description(soup)
+        object_type = infer_object_type(url, soup)
+
+        condition_raw, condition_source = extract_condition_raw(soup)
+        condition_norm = normalize_condition(condition_raw)
+        condition_confidence = 0.9 if condition_norm != "unknown" else 0.0
+
+        if condition_norm == "unknown":
+            cond_from_text, cond_source_text = condition_from_description(description)
+            if cond_from_text != "unknown":
+                condition_norm = cond_from_text
+                condition_source = cond_source_text
+                condition_confidence = 0.55
 
         rec = {
             "ad_id": ad_id,
@@ -324,7 +496,14 @@ def main(
             "floors_total": floors_total,
             "latitude": latitude,
             "longitude": longitude,
-            "image_urls": images,
+            "image_urls": images[:MAX_IMAGE_URLS],
+            "description": description,
+            "object_type": object_type,
+            "condition_raw": condition_raw,
+            "condition_norm": condition_norm,
+            "condition_source": condition_source,
+            "condition_confidence": condition_confidence,
+            "collected_at": datetime.now(timezone.utc).isoformat(),
         }
 
         if not is_valid(rec):
@@ -336,6 +515,7 @@ def main(
         time.sleep(random.uniform(sleep_min, sleep_max))
 
     print(f"Done. Valid saved: {ok}/{TARGET_OK}")
+
 
 if __name__ == "__main__":
     main()

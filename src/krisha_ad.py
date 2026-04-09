@@ -1,4 +1,5 @@
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import urlparse
@@ -11,9 +12,45 @@ HEADERS = {
     "Accept-Language": "ru-RU,ru;q=0.9,en;q=0.8",
 }
 
+CONDITION_SYNONYMS = {
+    "fresh": [
+        "свежий ремонт",
+        "евроремонт",
+        "новый ремонт",
+        "после ремонта",
+        "дизайнерский ремонт",
+        "хорошее состояние",
+    ],
+    "average": [
+        "косметический ремонт",
+        "среднее состояние",
+        "нормальное состояние",
+        "требуется косметический",
+    ],
+    "needs": [
+        "требует ремонта",
+        "без ремонта",
+        "черновая",
+        "черновая отделка",
+        "под ремонт",
+        "незавершенный ремонт",
+    ],
+}
+
+OBJECT_HINTS = {
+    "flat": ["квартира", "квартиры", "/kvartiry/"],
+    "house": ["дом", "дома", "/doma/"],
+    "dacha": ["дача", "дачи", "/dachi/"],
+    "commercial": ["коммерчес", "/kommercheskaya/"],
+}
+
 
 def clean_text(s: str) -> str:
     return (s or "").replace("\xa0", " ").strip()
+
+
+def normalize_whitespace(s: str) -> str:
+    return re.sub(r"\s+", " ", clean_text(s))
 
 
 def parse_price_digits(text: str) -> int | None:
@@ -98,6 +135,91 @@ def find_info_value_by_label(soup: BeautifulSoup, label: str) -> str | None:
             v = clean_text(value.get_text(" ", strip=True))
             return v or None
     return None
+
+
+def extract_condition_raw(soup: BeautifulSoup) -> tuple[str | None, str | None]:
+    for label in ("Состояние квартиры", "Состояние дома"):
+        v = find_info_value_by_label(soup, label)
+        if v:
+            return v, "listing_tag"
+
+    for data_name in ("flat.renovation", "house.condition", "condition"):
+        v = find_info_value(soup, data_name)
+        if v:
+            return v, "listing_tag"
+
+    return None, None
+
+
+def normalize_condition(value: str | None) -> str:
+    txt = normalize_whitespace(value or "").lower()
+    if not txt:
+        return "unknown"
+
+    for norm, patterns in CONDITION_SYNONYMS.items():
+        for p in patterns:
+            if p in txt:
+                return norm
+
+    if "ремонт" in txt and "треб" in txt:
+        return "needs"
+    if "ремонт" in txt and ("евро" in txt or "дизайн" in txt or "свеж" in txt):
+        return "fresh"
+    if "ремонт" in txt:
+        return "average"
+    return "unknown"
+
+
+def condition_from_description(description: str | None) -> tuple[str, str | None]:
+    if not description:
+        return "unknown", None
+    norm = normalize_condition(description)
+    if norm == "unknown":
+        return norm, None
+    return norm, "description"
+
+
+def extract_description(soup: BeautifulSoup) -> str | None:
+    selectors = [
+        "div.offer__description",
+        "section.offer__description",
+        "[data-name='text'] .text",
+        "[itemprop='description']",
+        ".a-options-text",
+    ]
+    for sel in selectors:
+        node = soup.select_one(sel)
+        if node:
+            txt = normalize_whitespace(node.get_text(" ", strip=True))
+            if txt:
+                return txt
+
+    for script in soup.find_all("script", type="application/ld+json"):
+        raw = script.string or ""
+        if '"description"' not in raw:
+            continue
+        m = re.search(r'"description"\s*:\s*"(.*?)"\s*(,|})', raw, flags=re.DOTALL)
+        if not m:
+            continue
+        txt = m.group(1)
+        txt = txt.encode("utf-8", errors="ignore").decode("unicode_escape", errors="ignore")
+        txt = normalize_whitespace(txt)
+        if txt:
+            return txt
+    return None
+
+
+def infer_object_type(url: str, soup: BeautifulSoup) -> str:
+    haystacks = [url.lower()]
+    h1 = soup.find("h1")
+    if h1:
+        haystacks.append(clean_text(h1.get_text(" ", strip=True)).lower())
+
+    merged = " ".join(haystacks)
+    for object_type, hints in OBJECT_HINTS.items():
+        if any(h in merged for h in hints):
+            return object_type
+    return "unknown"
 
 
 def extract_city_district(soup: BeautifulSoup) -> tuple[str | None, str | None]:
@@ -269,6 +391,18 @@ def fetch_listing(url: str, session: requests.Session | None = None) -> dict[str
     floor, floors_total = extract_floor_pair(soup)
     latitude, longitude = extract_coordinates(r.text, soup)
     image_urls = extract_images(soup)
+    description = extract_description(soup)
+    object_type = infer_object_type(norm_url, soup)
+
+    condition_raw, condition_source = extract_condition_raw(soup)
+    condition_norm = normalize_condition(condition_raw)
+    condition_confidence = 0.9 if condition_norm != "unknown" else 0.0
+    if condition_norm == "unknown":
+        cond_from_text, cond_source_text = condition_from_description(description)
+        if cond_from_text != "unknown":
+            condition_norm = cond_from_text
+            condition_source = cond_source_text
+            condition_confidence = 0.55
 
     if ad_id is None:
         m = re.search(r"/a/show/(\d+)", r.url)
@@ -292,6 +426,13 @@ def fetch_listing(url: str, session: requests.Session | None = None) -> dict[str
         "latitude": latitude,
         "longitude": longitude,
         "image_urls": image_urls,
+        "description": description,
+        "object_type": object_type,
+        "condition_raw": condition_raw,
+        "condition_norm": condition_norm,
+        "condition_source": condition_source,
+        "condition_confidence": condition_confidence,
+        "collected_at": datetime.now(timezone.utc).isoformat(),
     }
     return rec
 
@@ -364,4 +505,3 @@ def make_price_diff(pred_price: Optional[float], actual_price: Optional[float]) 
     diff = float(pred_price) - float(actual_price)
     diff_pct = (diff / float(actual_price)) * 100.0
     return {"pred": float(pred_price), "actual": float(actual_price), "diff": diff, "diff_pct": diff_pct}
-

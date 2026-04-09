@@ -27,7 +27,7 @@ def extract_ids(html: str) -> set[str]:
             ids.add(m.group(1))
     return ids
 
-def main(out_path="data/index/ad_ids.txt", pages=250, sleep_min=1.0, sleep_max=2.0):
+def main(out_path="data/index/ad_ids.txt", pages=4000, sleep_min=1.0, sleep_max=2.0):
     Path(out_path).parent.mkdir(parents=True, exist_ok=True)
     session = requests.Session()
 

@@ -54,7 +54,7 @@ class V2Estimator:
         self.normalize_per_image = bool(clip_cfg["normalize_per_image"])
         self.normalize_agg = bool(clip_cfg["normalize_agg"])
 
-        self.device = torch.device("cpu")
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.clip_model, _, self.preprocess = open_clip.create_model_and_transforms(
             self.clip_model_name, pretrained=self.clip_pretrained, device=self.device
         )
@@ -248,6 +248,21 @@ class V2Estimator:
     # -------------------------
     # Prediction (unchanged behavior)
     # -------------------------
+    def _to_scalar(self, v: Any, default: float = 0.0) -> float:
+        """
+        Safely convert model outputs like scalar / [x] / [[x]] to float.
+        """
+        try:
+            arr = np.asarray(v, dtype=np.float64)
+            if arr.size == 0:
+                return float(default)
+            return float(arr.reshape(-1)[0])
+        except Exception:
+            try:
+                return float(v)
+            except Exception:
+                return float(default)
+
     def predict(
         self,
         x: Dict[str, Any],
@@ -255,7 +270,7 @@ class V2Estimator:
     ) -> Dict[str, Any]:
         _, X, _ = self._build_row_and_df(x, image_files)
 
-        pred_log = float(self.model.predict(X))
+        pred_log = self._to_scalar(self.model.predict(X))
         ppm2 = float(np.exp(pred_log))
         price = float(ppm2 * float(X.loc[0, "area"]))
 
@@ -324,7 +339,7 @@ class V2Estimator:
         row, X, emb = self._build_row_and_df(x, image_files)
 
         # --- Predict
-        pred_log = float(self.model.predict(X))
+        pred_log = self._to_scalar(self.model.predict(X))
         ppm2 = float(np.exp(pred_log))
         area = float(X.loc[0, "area"])
         price = float(ppm2 * area)
@@ -391,7 +406,7 @@ class V2Estimator:
                 "confidence_note": "нет данных",
                 "signals": [],
                 "notes": [
-                    "Загрузите 3–7 фото (кухня, санузел, комнаты), чтобы оценить состояние ремонта.",
+                    "Загрузите 4–10 фото (кухня, санузел, комнаты), чтобы оценить состояние ремонта.",
                 ],
             }
             recommendations: List[Dict[str, Any]] = []

@@ -8,7 +8,7 @@ def main(
     raw_dir="data/raw_ads",
     img_root="data/images",
     out_path="data/index/index.parquet",
-    min_images=3,
+    min_images=4,
     require_local_images=False,
 ):
     rows = []
@@ -36,6 +36,7 @@ def main(
         rows.append({
             "ad_id": rec["ad_id"],
             "url": rec.get("url"),
+            "collected_at": rec.get("collected_at"),
 
             "price": rec.get("price"),
             "area": rec.get("area"),
@@ -46,6 +47,12 @@ def main(
             "district": rec.get("district"),
             "building_type": rec.get("building_type"),
             "residential_complex": rec.get("residential_complex"),
+            "object_type": rec.get("object_type"),
+            "description": rec.get("description"),
+            "condition_raw": rec.get("condition_raw"),
+            "condition_norm": rec.get("condition_norm"),
+            "condition_source": rec.get("condition_source"),
+            "condition_confidence": rec.get("condition_confidence"),
             "year_built": rec.get("year_built"),
             "floor": rec.get("floor"),
             "floors_total": rec.get("floors_total"),
@@ -62,6 +69,10 @@ def main(
     for c in ["rooms", "year_built", "floor", "floors_total", "latitude", "longitude"]:
         if c in df.columns:
             df[c] = pd.to_numeric(df[c], errors="coerce")
+    if "condition_confidence" in df.columns:
+        df["condition_confidence"] = pd.to_numeric(df["condition_confidence"], errors="coerce")
+    if "collected_at" in df.columns:
+        df["collected_at"] = pd.to_datetime(df["collected_at"], errors="coerce", utc=True)
 
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)

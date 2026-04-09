@@ -1,0 +1,33 @@
+# Core
+numpy>=1.26
+pandas>=2.2
+pyarrow>=15.0
+requests>=2.32
+beautifulsoup4>=4.12
+lxml>=5.2
+tqdm>=4.66
+pillow>=10.3
+
+# ML
+torch>=2.3
+torchvision>=0.18
+catboost>=1.2.5
+scikit-learn>=1.5
+open_clip_torch>=2.24
+
+# API/UI
+fastapi>=0.112
+uvicorn[standard]>=0.30
+python-multipart>=0.0.9
+streamlit>=1.36
+folium>=0.17
+streamlit-folium>=0.22
+
+# Notebooks/analysis
+jupyterlab>=4.2
+ipykernel>=6.29
+matplotlib>=3.9
+seaborn>=0.13
+
+# Optional explainability module (src/explain/*)
+shap>=0.46
