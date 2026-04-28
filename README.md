@@ -1,6 +1,7 @@
 # KrishaVision
 
 Photo-Enhanced Multimodal Apartment Valuation System
+
 A multimodal real estate valuation system: tabular features + listing photos (CLIP) + CatBoost.
 
 The project supports:
