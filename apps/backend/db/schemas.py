@@ -5,12 +5,12 @@ from pydantic import BaseModel, Field
 
 
 class RegisterRequest(BaseModel):
-    email: str
-    password: str = Field(min_length=8, max_length=128)
+    login: str = Field(min_length=3, max_length=64)
+    password: str = Field(min_length=6, max_length=128)
 
 
 class LoginRequest(BaseModel):
-    email: str
+    login: str = Field(min_length=3, max_length=64)
     password: str = Field(min_length=1, max_length=128)
 
 

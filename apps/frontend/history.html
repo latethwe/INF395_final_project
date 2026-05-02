@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>My History - KrishaVision</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/assets/styles.css?v=5" />
+  </head>
+  <body>
+    <main class="desk">
+      <section class="browser-frame">
+        <div class="hero-bg">
+          <header class="topbar">
+            <div class="brand">KrishaVision</div>
+            <div class="auth-actions">
+              <a class="small-cta" href="/home" style="text-decoration:none;display:grid;place-items:center;">Back to Home</a>
+            </div>
+          </header>
+
+          <h1>MY HISTORY</h1>
+          <section class="form-panel">
+            <section class="url-form" style="margin:0 auto 10px;max-width:340px;">
+              <div class="url-row" style="grid-template-columns: 1fr;">
+                <label class="field"><span>Mode</span>
+                  <select id="modeFilter">
+                    <option value="all">All</option>
+                    <option value="url">URL only</option>
+                    <option value="manual">Manual only</option>
+                  </select>
+                </label>
+              </div>
+            </section>
+            <section id="historyList" class="result show">Loading...</section>
+          </section>
+        </div>
+      </section>
+    </main>
+    <script src="/assets/history.js?v=2"></script>
+  </body>
+</html>

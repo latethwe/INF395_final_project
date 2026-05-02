@@ -13,16 +13,29 @@
       integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
       crossorigin=""
     />
-    <link rel="stylesheet" href="/assets/styles.css?v=3" />
+    <link rel="stylesheet" href="/assets/styles.css?v=5" />
   </head>
   <body>
     <main class="desk">
       <section class="browser-frame">
+        <header class="topbar topbar-solid">
+          <div class="brand">KrishaVision</div>
+          <div id="authGuest" class="auth-actions">
+            <button id="openSignIn" class="small-cta" type="button">Sign in</button>
+            <button id="openSignUp" class="small-cta" type="button">Sign up</button>
+          </div>
+          <div id="authUser" class="auth-user hidden">
+            <button id="accountBtn" class="small-cta" type="button">Account</button>
+            <div id="accountMenu" class="account-menu hidden">
+              <button id="historyBtn" type="button">My History</button>
+              <button id="logoutBtn" type="button">Log out</button>
+            </div>
+          </div>
+        </header>
         <div class="hero-bg">
           <h1>FIND OUT YOUR APARTMENT PRICE IN SECONDS</h1>
 
           <section class="form-panel">
-
             <form id="urlForm" class="url-form inactive-pane">
               <p class="url-title">Paste listing URL</p>
               <div class="url-row">
@@ -45,7 +58,7 @@
                   <label class="field"><span>📅 Year built</span><input name="year_built" type="number" placeholder="2024" required /></label>
                   <label class="field"><span>📍 District</span><select name="district" id="districtSelect" required></select></label>
 
-                  <label class="field"><span>Building type</span><select name="building_type" id="buildingTypeSelect"><option value="монолитный">монолитный</option></select></label>
+                  <label class="field"><span>Building type</span><select name="building_type" id="buildingTypeSelect"></select></label>
                   <label class="field"><span>Residential complex (search)</span><input id="rcSearch" type="text" placeholder="Start typing residential complex..." /></label>
                   <label class="field"><span>Residential complex</span><select name="residential_complex" id="rcSelect"></select></label>
                   <label class="field"><span>Latitude</span><input id="latInput" name="latitude" type="number" step="any" value="43.238949" /></label>
@@ -65,24 +78,34 @@
 
                 <button class="cta" type="submit">CALCULATE PRICE</button>
               </form>
-
             </div>
 
             <section id="result" class="result" aria-live="polite"></section>
-            <details id="debugPanel" class="debug-panel">
-              <summary class="debug-title">Debug Payload (show / hide)</summary>
-              <pre id="debugPayload">No payload sent yet.</pre>
-            </details>
+            <section id="historyPanel" class="result" style="display:none;"></section>
+            
           </section>
         </div>
       </section>
     </main>
+
+    <div id="authModal" class="auth-modal hidden">
+      <div class="auth-card">
+        <h3 id="authModalTitle">Sign in</h3>
+        <label class="field"><span>Login</span><input id="authEmail" type="text" placeholder="Login" /></label>
+        <label class="field"><span>Password</span><input id="authPassword" type="password" placeholder="Password (min 6 chars)" /></label>
+        <p id="authError" style="color:#b33a3a;font-size:13px;min-height:18px;margin:8px 0 0;"></p>
+        <div class="auth-row">
+          <button id="authSubmit" class="small-cta" type="button">Submit</button>
+          <button id="authCancel" class="small-cta" type="button">Cancel</button>
+        </div>
+      </div>
+    </div>
 
     <script
       src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
       integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
       crossorigin=""
     ></script>
-    <script src="/assets/app.js?v=3"></script>
+    <script src="/assets/app.js?v=6"></script>
   </body>
 </html>

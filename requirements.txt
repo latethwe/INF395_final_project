@@ -36,3 +36,6 @@ seaborn>=0.13
 
 # Optional explainability module (src/explain/*)
 shap>=0.46
+
+#DB
+psycopg[binary]>=3.2

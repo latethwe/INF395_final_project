@@ -3,12 +3,30 @@ from typing import List
 import csv
 import tempfile
 import json
+import shutil
+import uuid
 
-from fastapi import FastAPI, File, Form, HTTPException
+from fastapi import FastAPI, File, Form, HTTPException, Header, Request, Depends, Query
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import FileResponse
+from jose import JWTError, jwt
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from .core.config import settings
+from .core.security import create_access_token, hash_password
+from .db.models import User, PredictionHistory
+from .db.schemas import RegisterRequest, LoginRequest, TokenOut, UserOut, HistoryOut
+from .db.service import (
+    authenticate_user,
+    get_db,
+    init_db,
+    save_history,
+    serialize_history,
+    to_user_out,
+)
 
 from .ml.v2_infer import V2Estimator
 from .services.krisha_ad import (
@@ -53,6 +71,29 @@ DISTRICTS = [
 BUILDING_TYPES = ["монолитный", "кирпичный", "панельный", "иной"]
 OBJECT_TYPES = ["flat", "house", "dacha", "commercial", "unknown"]
 CONDITION_OPTIONS = ["fresh", "average", "needs", "unknown"]
+
+
+def _resolve_user_from_authorization(authorization: str | None, db: Session) -> User | None:
+    if not authorization:
+        return None
+    parts = authorization.strip().split(" ", 1)
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        return None
+    token = parts[1].strip()
+    if not token:
+        return None
+    try:
+        payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_alg])
+        sub = payload.get("sub")
+        user_id = int(sub) if sub else None
+    except (JWTError, ValueError):
+        return None
+    if not user_id:
+        return None
+    user = db.get(User, user_id)
+    if not user or not user.is_active:
+        return None
+    return user
 
 
 def _manual_prediction_payload(
@@ -108,10 +149,88 @@ def root():
 def home():
     return FileResponse(FRONTEND_ROOT / "index.html")
 
+@app.get("/my-history")
+def my_history_page():
+    return FileResponse(FRONTEND_ROOT / "history.html")
+
 
 @app.get("/health")
 def health():
     return {"status": "ok", "model": est.meta["version"]}
+
+
+@app.on_event("startup")
+def on_startup() -> None:
+    init_db()
+
+
+@app.post("/auth/register", response_model=TokenOut)
+def register(payload: RegisterRequest, db: Session = Depends(get_db)):
+    login = payload.login.strip()
+    if not login:
+        raise HTTPException(status_code=422, detail="Login is required")
+    existing = db.execute(select(User).where(User.email == login)).scalar_one_or_none()
+    if existing:
+        raise HTTPException(status_code=409, detail="Login already exists")
+    user = User(email=login, password_hash=hash_password(payload.password), role="user", is_active=True)
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    token = create_access_token(str(user.id), user.role)
+    return TokenOut(access_token=token, user=to_user_out(user))
+
+
+@app.post("/auth/login", response_model=TokenOut)
+def login(payload: LoginRequest, db: Session = Depends(get_db)):
+    user = authenticate_user(db, payload.login, payload.password)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid login or password")
+    token = create_access_token(str(user.id), user.role)
+    return TokenOut(access_token=token, user=to_user_out(user))
+
+
+@app.get("/auth/me", response_model=UserOut)
+def me(authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
+    user = _resolve_user_from_authorization(authorization, db)
+    if not user:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    return to_user_out(user)
+
+
+@app.get("/history", response_model=list[HistoryOut])
+def my_history(
+    authorization: str | None = Header(default=None),
+    limit: int = Query(default=30, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+):
+    user = _resolve_user_from_authorization(authorization, db)
+    if not user:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    stmt = (
+        select(PredictionHistory)
+        .where(PredictionHistory.user_id == user.id)
+        .order_by(PredictionHistory.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+    )
+    rows = db.execute(stmt).scalars().all()
+    return [serialize_history(item) for item in rows]
+
+
+@app.get("/history/{history_id}", response_model=HistoryOut)
+def history_detail(
+    history_id: int,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    user = _resolve_user_from_authorization(authorization, db)
+    if not user:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    item = db.get(PredictionHistory, history_id)
+    if not item or item.user_id != user.id:
+        raise HTTPException(status_code=404, detail="History item not found")
+    return serialize_history(item)
 
 
 def _load_rc_options() -> list[str]:
@@ -212,8 +331,12 @@ async def explain(
     condition_source: str | None = Form(default=None),
     condition_confidence: float | None = Form(default=None),
     image_urls_json: str | None = Form(default=None),
+    image_names_json: str | None = Form(default=None),
     images: List[bytes] = File(default=[]),
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
 ):
+    user = _resolve_user_from_authorization(authorization, db)
     x = _manual_prediction_payload(
         area=area,
         rooms=rooms,
@@ -268,7 +391,39 @@ async def explain(
             "photo_source": "manual_upload" if manual_images_count > 0 else ("from_listing_url" if linked_urls_used else "none"),
             "total_images_used": len(paths),
         }
-
+        if user:
+            image_names: list[str] = []
+            if image_names_json:
+                try:
+                    parsed_names = json.loads(image_names_json)
+                    if isinstance(parsed_names, list):
+                        image_names = [str(v) for v in parsed_names if str(v).strip()]
+                except Exception:
+                    image_names = []
+            saved_image_urls: list[str] = []
+            if manual_images_count > 0:
+                history_dir = DATA_IMAGES_DIR / "history" / str(user.id)
+                history_dir.mkdir(parents=True, exist_ok=True)
+                for i, src in enumerate(paths[:manual_images_count]):
+                    original = image_names[i] if i < len(image_names) else f"image_{i+1}.jpg"
+                    suffix = Path(original).suffix.lower() or ".jpg"
+                    safe_name = f"{uuid.uuid4().hex}{suffix}"
+                    dst = history_dir / safe_name
+                    try:
+                        shutil.copy2(src, dst)
+                        saved_image_urls.append(f"/data/images/history/{user.id}/{safe_name}")
+                    except Exception:
+                        continue
+            save_history(
+                db,
+                user_id=user.id,
+                mode="explain",
+                request_payload={**x, "images_count": len(paths), "image_names": image_names, "saved_image_urls": saved_image_urls},
+                response_payload=out,
+                predicted_price=out.get("prediction", {}).get("price"),
+                predicted_price_per_m2=out.get("prediction", {}).get("price_per_m2"),
+                source_url=None,
+            )
     return out
 
 
@@ -276,6 +431,8 @@ async def explain(
 async def predict_by_url(
     url: str = Form(...),
     use_photos: bool = Form(default=True),
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
 ):
     with tempfile.TemporaryDirectory() as td:
         td_path = Path(td)
@@ -351,4 +508,16 @@ async def predict_by_url(
             },
         }
 
+    user = _resolve_user_from_authorization(authorization, db)
+    if user:
+        save_history(
+            db,
+            user_id=user.id,
+            mode="predict_by_url",
+            request_payload={"url": url, "use_photos": use_photos},
+            response_payload=out,
+            predicted_price=prediction.get("price"),
+            predicted_price_per_m2=prediction.get("price_per_m2"),
+            source_url=rec.get("url") or url,
+        )
     return out
