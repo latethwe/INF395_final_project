@@ -12,11 +12,13 @@ pillow>=10.3
 ftfy>=6.2
 
 # ML (inference)
-torch>=2.3
-torchvision>=0.18
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.3.1+cpu
+torchvision==0.18.1+cpu
 catboost>=1.2.5
 scikit-learn>=1.5
 open_clip_torch>=2.24
+
 
 # API
 fastapi>=0.112
