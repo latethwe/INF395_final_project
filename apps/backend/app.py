@@ -5,6 +5,7 @@ import tempfile
 import json
 import shutil
 import uuid
+from threading import Lock
 
 from fastapi import FastAPI, File, Form, HTTPException, Header, Request, Depends, Query
 from fastapi.responses import RedirectResponse
@@ -43,7 +44,27 @@ FRONTEND_ROOT = REPO_ROOT / "apps" / "frontend"
 DATA_IMAGES_DIR = REPO_ROOT / "data" / "images"
 DATA_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 
-est = V2Estimator(BACKEND_ROOT)
+_ESTIMATOR: V2Estimator | None = None
+_ESTIMATOR_LOCK = Lock()
+
+
+def get_estimator() -> V2Estimator:
+    global _ESTIMATOR
+    if _ESTIMATOR is not None:
+        return _ESTIMATOR
+    with _ESTIMATOR_LOCK:
+        if _ESTIMATOR is None:
+            _ESTIMATOR = V2Estimator(BACKEND_ROOT)
+    return _ESTIMATOR
+
+
+def get_model_version() -> str:
+    metadata_path = BACKEND_ROOT / "models" / "v2_metadata.json"
+    try:
+        raw = json.loads(metadata_path.read_text(encoding="utf-8"))
+        return str(raw.get("version") or "unknown")
+    except Exception:
+        return "unknown"
 
 app = FastAPI(title="PricePal Real Estate API", version="4.0")
 cors_origins = [x.strip() for x in (settings.cors_origins or "*").split(",") if x.strip()]
@@ -159,7 +180,7 @@ def my_history_page():
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "model": est.meta["version"]}
+    return {"status": "ok", "model": get_model_version()}
 
 
 @app.on_event("startup")
@@ -286,6 +307,7 @@ async def predict(
     condition_confidence: float | None = Form(default=None),
     images: List[bytes] = File(default=[]),
 ):
+    est = get_estimator()
     x = _manual_prediction_payload(
         area=area,
         rooms=rooms,
@@ -339,6 +361,7 @@ async def explain(
     authorization: str | None = Header(default=None),
     db: Session = Depends(get_db),
 ):
+    est = get_estimator()
     user = _resolve_user_from_authorization(authorization, db)
     x = _manual_prediction_payload(
         area=area,
@@ -437,6 +460,7 @@ async def predict_by_url(
     authorization: str | None = Header(default=None),
     db: Session = Depends(get_db),
 ):
+    est = get_estimator()
     with tempfile.TemporaryDirectory() as td:
         td_path = Path(td)
         session_images_dir = td_path / "images"
