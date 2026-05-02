@@ -17,6 +17,7 @@ class Settings:
     access_token_expire_minutes: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
     admin_email: str = os.getenv("ADMIN_EMAIL", "admin@pricepal.local")
     admin_password: str = os.getenv("ADMIN_PASSWORD", "admin12345")
+    cors_origins: str = os.getenv("CORS_ORIGINS", "*")
 
 
 settings = Settings()

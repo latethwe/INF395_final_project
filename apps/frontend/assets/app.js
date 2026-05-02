@@ -27,6 +27,7 @@ const authPasswordInput = document.getElementById("authPassword");
 const authErrorNode = document.getElementById("authError");
 const authSubmitBtn = document.getElementById("authSubmit");
 const authCancelBtn = document.getElementById("authCancel");
+const API_BASE = (window.__API_BASE_URL || "").replace(/\/+$/, "");
 
 let selectedFiles = [];
 let linkedImageUrls = [];
@@ -63,7 +64,8 @@ function authHeaders() {
 }
 
 async function apiFetch(url, options = {}) {
-  return fetch(url, { ...options, headers: { ...(options.headers || {}), ...authHeaders() } });
+  const fullUrl = `${API_BASE}${url}`;
+  return fetch(fullUrl, { ...options, headers: { ...(options.headers || {}), ...authHeaders() } });
 }
 
 function detailToText(detail) {
@@ -113,7 +115,7 @@ async function submitAuth() {
     return;
   }
   const endpoint = authMode === "signup" ? "/auth/register" : "/auth/login";
-  const res = await fetch(endpoint, {
+  const res = await fetch(`${API_BASE}${endpoint}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ login, password }),

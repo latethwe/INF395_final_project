@@ -1,6 +1,7 @@
 const listNode = document.getElementById('historyList');
 const modeFilter = document.getElementById('modeFilter');
 const token = localStorage.getItem('access_token') || '';
+const API_BASE = (window.__API_BASE_URL || '').replace(/\/+$/, '');
 let allRows = [];
 
 function fmtMoney(v) {
@@ -163,7 +164,7 @@ function renderHistoryList(rows) {
         panel.innerHTML = panel.innerHTML ? '' : panel.dataset.cached || '';
         return;
       }
-      const detailRes = await fetch(`/history/${id}`, { headers: { Authorization: `Bearer ${token}` } });
+      const detailRes = await fetch(`${API_BASE}/history/${id}`, { headers: { Authorization: `Bearer ${token}` } });
       const row = await detailRes.json();
       if (!detailRes.ok) return;
       const html = detailHtml(row);
@@ -192,7 +193,7 @@ async function loadHistory() {
     return;
   }
 
-  const res = await fetch('/history', { headers: { Authorization: `Bearer ${token}` } });
+  const res = await fetch(`${API_BASE}/history`, { headers: { Authorization: `Bearer ${token}` } });
   const rows = await res.json();
   if (!res.ok) {
     listNode.innerHTML = esc(rows.detail || 'Failed to load history');

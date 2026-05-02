@@ -46,10 +46,13 @@ DATA_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 est = V2Estimator(BACKEND_ROOT)
 
 app = FastAPI(title="PricePal Real Estate API", version="4.0")
+cors_origins = [x.strip() for x in (settings.cors_origins or "*").split(",") if x.strip()]
+if not cors_origins:
+    cors_origins = ["*"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=cors_origins,
+    allow_credentials=("*" not in cors_origins),
     allow_methods=["*"],
     allow_headers=["*"],
 )
