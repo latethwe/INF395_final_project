@@ -1,0 +1,11 @@
+-r requirements.txt
+
+# Research / notebooks / local demo
+streamlit>=1.36
+folium>=0.17
+streamlit-folium>=0.22
+jupyterlab>=4.2
+ipykernel>=6.29
+matplotlib>=3.9
+seaborn>=0.13
+shap>=0.46
