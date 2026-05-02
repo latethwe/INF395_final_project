@@ -117,7 +117,7 @@ Open:
 - `GET /runtime-config`
 
 ## 12. Deployment Modes
-### A) Single-host deployment (recommended for demo)
+### A) Single-host deployment
 Frontend + backend on one Railway service:
 - `ML_ENABLED=true` if memory allows
 - or `ML_ENABLED=false` to keep service lightweight
