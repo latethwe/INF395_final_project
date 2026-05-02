@@ -1,0 +1,62 @@
+{
+  "version": "v1_tabular_baseline_time_split",
+  "target": "log_price_per_m2",
+  "current_year": 2026,
+  "features_num": [
+    "area",
+    "rooms",
+    "floor",
+    "floors_total",
+    "floor_ratio",
+    "is_first",
+    "is_last",
+    "building_age",
+    "latitude",
+    "longitude",
+    "has_geo",
+    "has_residential_complex",
+    "condition_confidence"
+  ],
+  "features_cat": [
+    "district",
+    "building_type",
+    "residential_complex",
+    "object_type",
+    "condition_norm",
+    "condition_source"
+  ],
+  "features": [
+    "area",
+    "rooms",
+    "floor",
+    "floors_total",
+    "floor_ratio",
+    "is_first",
+    "is_last",
+    "building_age",
+    "latitude",
+    "longitude",
+    "has_geo",
+    "has_residential_complex",
+    "condition_confidence",
+    "district",
+    "building_type",
+    "residential_complex",
+    "object_type",
+    "condition_norm",
+    "condition_source"
+  ],
+  "split_strategy": "time_based_collected_at",
+  "metrics_val": {
+    "mae_ppm2": 90439.07348024353,
+    "rmse_ppm2": 146188.49257833714,
+    "mae_price": 7563376.668422912,
+    "rmse_price": 20503824.599720303
+  },
+  "metrics_test": {
+    "mae_ppm2": 87248.12751136764,
+    "rmse_ppm2": 231085.71563560088,
+    "mae_price": 6930742.29627872,
+    "rmse_price": 23141869.17792759
+  }
+}

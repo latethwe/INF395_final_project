@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>KrishaVision</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700;800&display=swap" rel="stylesheet" />
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin=""
+    />
+    <link rel="stylesheet" href="/assets/styles.css?v=3" />
+  </head>
+  <body>
+    <main class="desk">
+      <section class="browser-frame">
+        <div class="hero-bg">
+          <h1>FIND OUT YOUR APARTMENT PRICE IN SECONDS</h1>
+
+          <section class="form-panel">
+
+            <form id="urlForm" class="url-form inactive-pane">
+              <p class="url-title">Paste listing URL</p>
+              <div class="url-row">
+                <label class="url-input">
+                  <span>🔎</span>
+                  <input name="url" type="url" placeholder="Paste a link from Krisha.kz" required />
+                </label>
+                <button class="small-cta" type="submit">Find</button>
+              </div>
+            </form>
+
+            <div class="tab-layout">
+              <form id="paramsForm" class="params-form">
+                <div class="grid-3">
+                  <label class="field"><span>📏 Area (m²)</span><input name="area" type="number" step="0.1" required /></label>
+                  <label class="field"><span>🛋️ Number of rooms</span><input name="rooms" type="number" required /></label>
+                  <label class="field"><span>🛗 Floor</span><input name="floor" type="number" required /></label>
+
+                  <label class="field"><span>🏢 Total floors in building</span><input name="floors_total" type="number" required /></label>
+                  <label class="field"><span>📅 Year built</span><input name="year_built" type="number" placeholder="2024" required /></label>
+                  <label class="field"><span>📍 District</span><select name="district" id="districtSelect" required></select></label>
+
+                  <label class="field"><span>Building type</span><select name="building_type" id="buildingTypeSelect"><option value="монолитный">монолитный</option></select></label>
+                  <label class="field"><span>Residential complex (search)</span><input id="rcSearch" type="text" placeholder="Start typing residential complex..." /></label>
+                  <label class="field"><span>Residential complex</span><select name="residential_complex" id="rcSelect"></select></label>
+                  <label class="field"><span>Latitude</span><input id="latInput" name="latitude" type="number" step="any" value="43.238949" /></label>
+                  <label class="field"><span>Longitude</span><input id="lonInput" name="longitude" type="number" step="any" value="76.889709" /></label>
+                </div>
+
+                <div class="map-wrap">
+                  <div class="map-tip">Click on the map to update Latitude/Longitude</div>
+                  <div id="map"></div>
+                </div>
+
+                <label class="upload-box" for="imagesInput">
+                  <input id="imagesInput" name="images" type="file" accept="image/*" multiple />
+                  <span class="upload-icon">📷</span>
+                  <span>UPLOAD UP TO 10 APARTMENT PHOTOS</span>
+                </label>
+
+                <button class="cta" type="submit">CALCULATE PRICE</button>
+              </form>
+
+            </div>
+
+            <section id="result" class="result" aria-live="polite"></section>
+            <details id="debugPanel" class="debug-panel">
+              <summary class="debug-title">Debug Payload (show / hide)</summary>
+              <pre id="debugPayload">No payload sent yet.</pre>
+            </details>
+          </section>
+        </div>
+      </section>
+    </main>
+
+    <script
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+      crossorigin=""
+    ></script>
+    <script src="/assets/app.js?v=3"></script>
+  </body>
+</html>

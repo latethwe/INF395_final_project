@@ -1,173 +1,139 @@
-# Krisha Multimodal Price Estimator
+# KrishaVision: Multimodal Apartment Valuation Platform
 
-A multimodal real estate valuation system: tabular features + listing photos (CLIP) + CatBoost.
+## 1. Project Area
+AI Systems / PropTech (Real Estate Analytics)
 
-The project supports:
-- collecting and refreshing a Krisha listings dataset;
-- the new data schema (`condition_*`, `description`, `object_type`, `collected_at`);
-- time-based split and evaluation;
-- baseline (tabular) and multimodal (tabular + CLIP) training;
-- FastAPI service + web UI.
+## 2. Problem Statement
+Apartment listing prices are often subjective and inconsistent, making fair valuation difficult for buyers and sellers. Manual appraisal is slow and heavily dependent on expert judgment. Most simple calculators ignore visual apartment condition from photos, which strongly affects market value. This leads to pricing errors, weak negotiation confidence, and inefficient transactions.
 
-## 1. Tech Stack
+## 3. Proposed Solution
+KrishaVision is a multimodal valuation platform that combines:
+- Tabular listing features (area, rooms, district, floor, total floors, year built, geo coordinates, residential complex)
+- Visual features extracted from apartment photos via OpenCLIP
 
-- Python
-- PyTorch + OpenCLIP
-- CatBoost
-- Pandas / NumPy / PyArrow
-- FastAPI / Uvicorn
-- Streamlit
+A CatBoost regressor predicts price per square meter and total apartment price. The system also provides:
+- Explainability (positive/negative factor breakdown)
+- Renovation-condition signal analysis from photos
+- Comparable listings
+- Automatic valuation by Krisha URL, including difference between listed and predicted price
 
-## 2. Installation
+## 4. Target Users
+- Apartment buyers and sellers
+- Real estate agents/brokers
+- Real estate analysts and researchers
 
+## 5. Technology Stack
+- Frontend: HTML, CSS, JavaScript, Leaflet map
+- Backend: FastAPI, Uvicorn
+- ML/AI: CatBoost, OpenCLIP, PyTorch, NumPy, Pandas
+- Storage: JSON/CSV/Parquet, local image folders
+- Integrations: Krisha parsing, REST API
+- Tools: Python, BeautifulSoup, requests, Jupyter, Git/GitHub
+
+## 6. Key Features
+1. Price prediction from apartment parameters + uploaded photos
+2. Explain mode with positive/negative factor tables
+3. Renovation/condition analysis from photos + practical signals
+4. URL-based automatic valuation (parse listing, use photos, predict, compare listing vs model)
+
+## 7. Current Project Structure
+```text
+apps/
+  backend/
+    app.py
+    core/
+    db/
+    ml/
+      v2_infer.py
+    models/
+      catboost_tabular_plus_clip_vitb32.cbm
+      v2_metadata.json
+    services/
+      krisha_ad.py
+  frontend/
+    index.html
+    assets/
+      styles.css
+      app.js
+archive/
+  ml_research/
+data/
+  index/
+  images/   (runtime-generated)
+```
+
+## 8. How to Run
+### 8.1 Requirements
+- Python 3.10+
+- macOS/Linux/Windows
+
+### 8.2 Installation
 ```bash
-cd /path/to/krisha
 python -m venv .venv
 source .venv/bin/activate
 pip install -U pip
 pip install -r requirements.txt
 ```
 
-GPU check:
+### 8.3 Environment
+Create `.env` in project root:
+```env
+DATABASE_URL=sqlite:///./krisha_app.db
+JWT_SECRET=change_me
+JWT_ALG=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=60
+```
 
+### 8.4 Start Backend
 ```bash
-python -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'no-gpu')"
+python -m uvicorn apps.backend.app:app --reload
 ```
 
-## 3. Project Structure
+Open:
+- UI: http://127.0.0.1:8000/home
+- API docs: http://127.0.0.1:8000/docs
 
-```text
-scripts/      # data collection, indexing, split, eval
-src/          # API, inference, listing parser
-notebooks/    # data checks, embeddings, training
-data/         # raw_ads, images, index, processed
-models/       # trained models and metadata
-frontend/     # built-in FastAPI UI
-```
+## 9. Main API Endpoints
+- `GET /home` - main web interface
+- `GET /meta/options` - dropdown options (districts, building types, residential complexes)
+- `POST /explain` - valuation + explanation from manual form
+- `POST /predict_by_url` - automatic valuation by Krisha URL
+- `GET /health` - service health check
 
-## 4. Data Schema (New)
+## 10. Workflow
+### A) URL-based flow
+1. User pastes Krisha URL
+2. Backend parses listing fields and photos
+3. Model predicts valuation and explanation
+4. UI auto-fills form and displays predicted vs listed price
 
-Key fields in `data/raw_ads/*.json` and `data/index/index.parquet`:
-- base: `ad_id`, `url`, `price`, `area`, `price_per_m2`, `rooms`, `district`, `building_type`, `year_built`, `floor`, `floors_total`, `latitude`, `longitude`, `image_urls`
-- new: `description`, `object_type`, `condition_raw`, `condition_norm`, `condition_source`, `condition_confidence`, `collected_at`
+### B) Manual flow
+1. User sets apartment parameters + optional photos
+2. System predicts price and renders explainability tables
+3. UI shows renovation label, positive factors, and negative factors
 
-Condition normalization:
-- `condition_norm in {fresh, average, needs, unknown}`
-- source: `condition_source in {listing_tag, description, null}`
+## 11. Notes and Limitations
+- `apps/backend/models/` files are required; without them inference endpoints fail.
+- `data/images/` is runtime-only and auto-created on startup.
+- `data/index/index.parquet` is used for comparable listings quality.
+- External parsing quality depends on source page structure and accessibility.
 
-## 5. Full Run Order (From Scratch)
+## 12. Team Members
+1. Zhassulan Tursynbay - ML Engineer / Backend Developer  
+   Student ID: 230103029  
+   Email: 230103029@sdu.edu.kz
 
-### 5.1 Data Collection
+2. Nuriya Sultanseitova - Frontend / UX Integration  
+   Student ID: 230103360  
+   Email: 230103360@sdu.edu.kz
 
-```bash
-source .venv/bin/activate
-python scripts/01_collect_ids.py
-python scripts/02_fetch_details.py
-python scripts/03_download_images.py
-python scripts/04_build_index.py
-```
+3. Nursultan Zhanbulat - Data Engineering / Web Parsing  
+   Student ID: 230103251  
+   Email: 230103251@sdu.edu.kz
 
-What each step does:
-- `01_collect_ids.py` — collects listing `ad_id`s;
-- `02_fetch_details.py` — parses listings up to `TARGET_OK=25000`, min photos = 4, stores new schema;
-- `03_download_images.py` — downloads up to 10 photos per listing;
-- `04_build_index.py` — builds `data/index/index.parquet`.
-
-### 5.2 Data Validation
-
-Open and run all cells:
-- `notebooks/data_check.ipynb`
-
-### 5.3 Time-Based Split
-
-```bash
-python scripts/06_time_split.py --parquet data/index/index.parquet --out-dir data/processed --train-ratio 0.8 --val-ratio 0.1
-```
-
-Outputs:
-- `data/processed/train_ad_ids.csv`
-- `data/processed/val_ad_ids.csv`
-- `data/processed/test_ad_ids.csv`
-
-### 5.4 CLIP Embeddings
-
-Open and run all cells:
-- `notebooks/clip_embeddings_cpu.ipynb`
-
-Outputs:
-- `data/processed/clip_vitb32_ad_ids.npy`
-- `data/processed/clip_vitb32_ad_emb.npy`
-
-> The notebook automatically uses `cuda` when available.
-
-### 5.5 Baseline Training (Tabular)
-
-Open and run all cells:
-- `notebooks/catboost_baseline.ipynb`
-
-Outputs:
-- `models/catboost_tabular_baseline.cbm`
-- `models/v1_metadata.json`
-
-### 5.6 Multimodal Training (Tabular + CLIP)
-
-Open and run all cells:
-- `notebooks/train_tabular_plus_clip.ipynb`
-
-Outputs:
-- `models/catboost_tabular_plus_clip_vitb32.cbm`
-- `models/v2_metadata.json`
-
-### 5.7 Time-Based Evaluation
-
-```bash
-python scripts/07_evaluate_time_based.py --parquet data/index/index.parquet --splits-dir data/processed --out-json data/processed/time_eval_metrics.json
-```
-
-Output:
-- `data/processed/time_eval_metrics.json`
-
-## 6. Run API and UI
-
-### FastAPI
-
-```bash
-uvicorn src.app:app --reload
-```
-
-- API: `http://127.0.0.1:8000`
-- UI: `http://127.0.0.1:8000/ui`
-
-### Streamlit (Optional)
-
-```bash
-streamlit run src/streamlit.py
-```
-
-## 7. Re-runs and Duplicates
-
-- `scripts/02_fetch_details.py` is resume-friendly and does not create duplicate files per `ad_id` (`raw_ads/<ad_id>.json`).
-- `scripts/03_download_images.py` does not rewrite already downloaded image files.
-- `scripts/04_build_index.py` rebuilds `index.parquet` from current data.
-
-## 8. GPU and CLIP Model Choice
-
-Current default: `ViT-B-32` (fast and stable baseline).
-
-Recommended approach:
-1. Lock baseline metrics with `ViT-B-32`.
-2. Run an isolated experiment with a heavier model (for example `ViT-L-14`) on the same split.
-3. Switch only if quality gains are stable and justify extra runtime/VRAM.
-
-## 9. Useful Files
-
-- `scripts/02_fetch_details.py` — new parsing schema
-- `scripts/06_time_split.py` — time split
-- `scripts/07_evaluate_time_based.py` — evaluation
-- `src/v2_infer.py` — inference and explainability
-- `src/krisha_ad.py` — parse listing by URL
-- `src/app.py` — API
+4. Iliyas Malibekov - QA / Deployment  
+   Student ID: 230103344  
+   Email: 230103344@sdu.edu.kz
 
 ---
-
-If you want a one-command workflow, add a wrapper script like `run_full_pipeline.sh` that runs steps 5.1 → 5.7 sequentially.
+This repository contains the final integrated coursework prototype for multimodal apartment valuation.

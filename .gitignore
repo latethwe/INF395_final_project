@@ -1,21 +1,61 @@
+# =========================
 # Python
+# =========================
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
 
-# Virtual env
+# =========================
+# Virtual env / secrets
+# =========================
 .venv/
-.env/
+.env
+.env.*
+!.env.example
 
+# =========================
 # Jupyter
+# =========================
 .ipynb_checkpoints/
 
-# Data / models
-data/
-*.csv
+# =========================
+# Runtime / local artifacts
+# =========================
+*.db
+krisha_app.db
+data/images/
+
+# =========================
+# Logs / temp
+# =========================
+*.log
+*.out
+*.err
+*.pid
+*.tmp
+*.temp
+
+# =========================
+# OS / editor
+# =========================
+.DS_Store
+.vscode/
+
+# =========================
+# Model / ML aux binaries
+# keep .cbm tracked
+# =========================
 *.pth
 *.pt
 *.h5
 
-.DS_Store
-.vscode/
-models/*.cbm
+# =========================
+# Archive: ignore only data folder
+# =========================
+archive/ml_research/data/
+archive/ml_research/data/**
+
+# Ignore heavy CatBoost training logs inside notebooks
+archive/ml_research/notebooks/catboost_info/
+archive/ml_research/notebooks/catboost_info/**
