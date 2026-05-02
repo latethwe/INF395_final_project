@@ -27,7 +27,7 @@ const authPasswordInput = document.getElementById("authPassword");
 const authErrorNode = document.getElementById("authError");
 const authSubmitBtn = document.getElementById("authSubmit");
 const authCancelBtn = document.getElementById("authCancel");
-const API_BASE = (window.__API_BASE_URL || "").replace(/\/+$/, "");
+let API_BASE = (window.__API_BASE_URL || "").replace(/\/+$/, "");
 
 let selectedFiles = [];
 let linkedImageUrls = [];
@@ -66,6 +66,16 @@ function authHeaders() {
 async function apiFetch(url, options = {}) {
   const fullUrl = `${API_BASE}${url}`;
   return fetch(fullUrl, { ...options, headers: { ...(options.headers || {}), ...authHeaders() } });
+}
+
+async function loadRuntimeConfig() {
+  try {
+    const res = await fetch("/runtime-config");
+    if (!res.ok) return;
+    const data = await res.json();
+    const apiBase = String(data?.api_base_url || "").trim().replace(/\/+$/, "");
+    if (apiBase) API_BASE = apiBase;
+  } catch (_e) {}
 }
 
 function detailToText(detail) {
@@ -488,5 +498,11 @@ authModal.addEventListener("click", (e) => {
 
 ensurePreviewContainers();
 updateAuthUI();
-loadOptions();
-initMap();
+
+async function initApp() {
+  await loadRuntimeConfig();
+  await loadOptions();
+  initMap();
+}
+
+initApp();

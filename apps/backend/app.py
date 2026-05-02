@@ -46,15 +46,21 @@ DATA_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 
 _ESTIMATOR: V2Estimator | None = None
 _ESTIMATOR_LOCK = Lock()
+_ML_DISABLED_MESSAGE = "ML service is temporarily unavailable on this deployment. Run model inference locally via Cloudflare tunnel and connect frontend to that endpoint."
 
 
 def get_estimator() -> V2Estimator:
+    if not settings.ml_enabled:
+        raise HTTPException(status_code=503, detail=_ML_DISABLED_MESSAGE)
     global _ESTIMATOR
     if _ESTIMATOR is not None:
         return _ESTIMATOR
     with _ESTIMATOR_LOCK:
         if _ESTIMATOR is None:
-            _ESTIMATOR = V2Estimator(BACKEND_ROOT)
+            try:
+                _ESTIMATOR = V2Estimator(BACKEND_ROOT)
+            except Exception as e:
+                raise HTTPException(status_code=503, detail=f"{_ML_DISABLED_MESSAGE} Startup error: {e}") from e
     return _ESTIMATOR
 
 
@@ -180,7 +186,12 @@ def my_history_page():
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "model": get_model_version()}
+    return {"status": "ok", "model": get_model_version(), "ml_enabled": settings.ml_enabled}
+
+
+@app.get("/runtime-config")
+def runtime_config():
+    return {"api_base_url": settings.external_ml_api_base or ""}
 
 
 @app.on_event("startup")

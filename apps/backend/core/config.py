@@ -8,6 +8,12 @@ from dotenv import load_dotenv
 REPO_ROOT = Path(__file__).resolve().parents[3]
 load_dotenv(REPO_ROOT / ".env")
 
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
 
 @dataclass
 class Settings:
@@ -18,6 +24,8 @@ class Settings:
     admin_email: str = os.getenv("ADMIN_EMAIL", "admin@pricepal.local")
     admin_password: str = os.getenv("ADMIN_PASSWORD", "admin12345")
     cors_origins: str = os.getenv("CORS_ORIGINS", "*")
+    ml_enabled: bool = _env_bool("ML_ENABLED", True)
+    external_ml_api_base: str = os.getenv("EXTERNAL_ML_API_BASE", "").strip()
 
 
 settings = Settings()

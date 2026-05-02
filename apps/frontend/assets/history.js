@@ -1,8 +1,18 @@
 const listNode = document.getElementById('historyList');
 const modeFilter = document.getElementById('modeFilter');
 const token = localStorage.getItem('access_token') || '';
-const API_BASE = (window.__API_BASE_URL || '').replace(/\/+$/, '');
+let API_BASE = (window.__API_BASE_URL || '').replace(/\/+$/, '');
 let allRows = [];
+
+async function loadRuntimeConfig() {
+  try {
+    const res = await fetch('/runtime-config');
+    if (!res.ok) return;
+    const data = await res.json();
+    const apiBase = String(data?.api_base_url || '').trim().replace(/\/+$/, '');
+    if (apiBase) API_BASE = apiBase;
+  } catch (_e) {}
+}
 
 function fmtMoney(v) {
   return `${new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 }).format(v || 0)} ₸`;
@@ -204,4 +214,8 @@ async function loadHistory() {
 }
 
 modeFilter.addEventListener('change', applyFilters);
-loadHistory();
+async function initHistoryPage() {
+  await loadRuntimeConfig();
+  await loadHistory();
+}
+initHistoryPage();
