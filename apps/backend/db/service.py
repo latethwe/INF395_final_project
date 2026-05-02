@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from ..core.security import verify_password
 from .models import PredictionHistory, User
 from .schemas import UserOut
-from .session import Base, engine
+from .session import Base, engine, get_db
 
 
 def init_db() -> None:
