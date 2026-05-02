@@ -7,7 +7,7 @@ import shutil
 import uuid
 from threading import Lock
 
-from fastapi import FastAPI, File, Form, HTTPException, Header, Request, Depends, Query
+from fastapi import FastAPI, File, Form, HTTPException, Header, Depends, Query
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
