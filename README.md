@@ -78,10 +78,7 @@ pip install -r requirements.txt
 ### 8.3 Environment
 Create `.env` in project root:
 ```env
-DATABASE_URL=sqlite:///./krisha_app.db
-JWT_SECRET=change_me
-JWT_ALG=HS256
-ACCESS_TOKEN_EXPIRE_MINUTES=60
+DATABASE_URL=...
 ```
 
 ### 8.4 Start Backend
