@@ -4,6 +4,14 @@ const token = localStorage.getItem('access_token') || '';
 let API_BASE = (window.__API_BASE_URL || '').replace(/\/+$/, '');
 let allRows = [];
 
+function resolveMediaUrl(url) {
+  const raw = String(url || '').trim();
+  if (!raw) return '';
+  if (/^https?:\/\//i.test(raw)) return raw;
+  if (raw.startsWith('/')) return `${API_BASE}${raw}`;
+  return `${API_BASE}/${raw}`;
+}
+
 async function loadRuntimeConfig() {
   try {
     const res = await fetch('/runtime-config');
@@ -109,11 +117,17 @@ function detailHtml(row) {
 
   const photosBlock = usedUrls.length
     ? `<div style="margin-top:10px;"><strong>Photos used</strong><div class="image-preview-grid">${usedUrls
-        .map((u) => `<a href="${u}" target="_blank" rel="noreferrer"><img class="preview-thumb" src="${u}" alt="photo"/></a>`)
+        .map((u) => {
+          const media = resolveMediaUrl(u);
+          return `<a href="${media}" target="_blank" rel="noreferrer"><img class="preview-thumb" src="${media}" alt="photo"/></a>`;
+        })
         .join('')}</div></div>`
     : savedImageUrls.length
     ? `<div style="margin-top:10px;"><strong>Uploaded photos</strong><div class="image-preview-grid">${savedImageUrls
-        .map((u) => `<a href="${u}" target="_blank" rel="noreferrer"><img class="preview-thumb" src="${u}" alt="photo"/></a>`)
+        .map((u) => {
+          const media = resolveMediaUrl(u);
+          return `<a href="${media}" target="_blank" rel="noreferrer"><img class="preview-thumb" src="${media}" alt="photo"/></a>`;
+        })
         .join('')}</div></div>`
     : `<div style="margin-top:10px;"><strong>Uploaded image names:</strong> ${imageNames.length ? esc(imageNames.join(', ')) : '—'}</div>`;
 
