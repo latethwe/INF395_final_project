@@ -145,10 +145,10 @@ The frontend reads `/runtime-config` and automatically routes inference requests
    Student ID: 230103360  
    Email: 230103360@sdu.edu.kz
 
-3. Nursultan Zhanbulat - Data Engineering / Web Parsing  
+3. Iliyas Malibekov - Data Engineering / Web Parsing  
+   Student ID: 230103344 
+   Email: 230103344@sdu.edu.kz
+
+4. Nursultan Zhanbulat - QA / Deployment  
    Student ID: 230103251  
    Email: 230103251@sdu.edu.kz
-
-4. Iliyas Malibekov - QA / Deployment  
-   Student ID: 230103344  
-   Email: 230103344@sdu.edu.kz
