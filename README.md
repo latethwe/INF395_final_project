@@ -10,8 +10,7 @@ Adding image features on top of a tabular baseline cut **price MAE by 8.0%** and
 
 ## Demo
 
-<!-- Put a 15-25s screen recording at docs/demo.gif before pushing. Without the file this image will render broken. -->
-![KrishaVision demo](docs/demo.gif)
+![KrishaVision demo](docs/demo.png)
 
 Paste a Krisha listing URL → fields auto-fill → the model returns price, price per m², renovation condition inferred from the photos, and a breakdown of which factors pushed the price up or down.
 
